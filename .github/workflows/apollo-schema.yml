@@ -1,0 +1,94 @@
+name: Upload Apollo GraphQL Schema
+
+on:
+  workflow_call:
+    inputs:
+      graph-name:
+        description: 'Apollo graph name'
+        type: string
+        required: true
+      subgraph-name:
+        description: 'Subgraph name'
+        type: string
+        required: false
+        default: 'Base'
+      schema-path:
+        description: 'Path to schema file'
+        type: string
+        required: false
+        default: './schema.gql'
+      routing-url:
+        description: 'Subgraph routing URL'
+        type: string
+        required: false
+        default: 'http://localhost:8080/graphql'
+      environment:
+        description: 'Environment'
+        type: string
+        required: true
+      working-directory:
+        description: 'Working directory'
+        type: string
+        required: false
+        default: '.'
+    secrets:
+      APOLLO_KEY:
+        description: 'Apollo Studio API key'
+        required: true
+
+jobs:
+  upload-schema:
+    name: Upload GraphQL Schema to Apollo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rover CLI
+        run: |
+          curl -sSL https://rover.apollo.dev/nix/latest | sh
+          echo "$HOME/.rover/bin" >> $GITHUB_PATH
+      
+      - name: Upload schema to Apollo
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          ENV="${{ inputs.environment }}"
+          GRAPH="${{ inputs.graph-name }}"
+          SUBGRAPH="${{ inputs.subgraph-name }}"
+          SCHEMA="${{ inputs.schema-path }}"
+          ROUTING_URL="${{ inputs.routing-url }}"
+          
+          # Determine variant based on environment
+          if [[ "$ENV" == "production" ]]; then
+            VARIANT="production"
+          elif [[ "$ENV" == "staging" ]]; then
+            VARIANT="staging"
+          else
+            VARIANT="current"
+          fi
+          
+          echo "Uploading schema to Apollo Studio"
+          echo "Graph: ${GRAPH}@${VARIANT}"
+          echo "Subgraph: ${SUBGRAPH}"
+          
+          # Check schema first
+          rover subgraph check ${GRAPH}@${VARIANT} \
+            --name ${SUBGRAPH} \
+            --schema ${SCHEMA} \
+            --background
+          
+          # Publish schema
+          rover subgraph publish ${GRAPH}@${VARIANT} \
+            --name ${SUBGRAPH} \
+            --schema ${SCHEMA} \
+            --routing-url ${ROUTING_URL}
+      
+      - name: Upload Summary
+        run: |
+          echo "## 🚀 Apollo Schema Updated!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Schema Details:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Graph:** ${{ inputs.graph-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Subgraph:** ${{ inputs.subgraph-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY

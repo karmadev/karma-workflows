@@ -1,0 +1,19 @@
+# Deploy configuration for Firebase application
+# Example: storefront-web, karma-web, mobile apps
+
+SERVICE_NAME="storefront-web"
+DEFAULT_BRANCH="main"
+DEPLOY_BRANCHES="main master"
+VERSION_PREFIX="v"
+ENABLE_HOTFIX=false
+ENABLE_PREVIEW=true
+
+# Firebase-specific settings
+DEPLOY_TYPE="firebase"
+FIREBASE_PROJECT_DEV="karma-storefront-dev"
+FIREBASE_PROJECT_STAGING="karma-storefront-staging"
+FIREBASE_PROJECT_PROD="karma-storefront-prod"
+
+# Optional: Build settings
+BUILD_COMMAND="npm run build:production"
+DEPLOY_TARGETS="hosting"

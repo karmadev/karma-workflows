@@ -1,0 +1,139 @@
+name: Deploy Cloud Functions
+
+on:
+  workflow_call:
+    inputs:
+      function-name:
+        description: 'Cloud Function name'
+        type: string
+        required: true
+      environment:
+        description: 'Deployment environment'
+        type: string
+        required: true
+      working-directory:
+        description: 'Working directory'
+        type: string
+        required: false
+        default: '.'
+      runtime:
+        description: 'Runtime (nodejs18, nodejs20, python311, etc.)'
+        type: string
+        required: false
+        default: 'nodejs18'
+      entry-point:
+        description: 'Function entry point'
+        type: string
+        required: false
+        default: 'main'
+      region:
+        description: 'GCP region'
+        type: string
+        required: false
+        default: 'europe-north1'
+      memory:
+        description: 'Memory allocation (128MB, 256MB, 512MB, etc.)'
+        type: string
+        required: false
+        default: '256MB'
+      timeout:
+        description: 'Timeout in seconds'
+        type: string
+        required: false
+        default: '60'
+      env-vars:
+        description: 'Environment variables (KEY1=value1,KEY2=value2)'
+        type: string
+        required: false
+      vpc-connector:
+        description: 'VPC connector name'
+        type: string
+        required: false
+    secrets:
+      GCP_SA_KEY:
+        description: 'GCP Service Account key'
+        required: true
+      NPM_TOKEN:
+        description: 'NPM token for private packages'
+        required: false
+
+jobs:
+  deploy:
+    name: Deploy Cloud Function (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Determine GCP project
+        id: gcp-project
+        run: |
+          ENV="${{ inputs.environment }}"
+          if [[ "$ENV" == "production" ]]; then
+            echo "project=karma-production-55cdd06e" >> $GITHUB_OUTPUT
+          else
+            echo "project=karma-development-513f2d47" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Configure NPM for private packages
+        if: startsWith(inputs.runtime, 'nodejs') && secrets.NPM_TOKEN != ''
+        working-directory: ${{ inputs.working-directory }}
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+      
+      - name: Deploy Cloud Function
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          DEPLOY_CMD="gcloud functions deploy ${{ inputs.function-name }}"
+          DEPLOY_CMD="$DEPLOY_CMD --gen2"
+          DEPLOY_CMD="$DEPLOY_CMD --runtime=${{ inputs.runtime }}"
+          DEPLOY_CMD="$DEPLOY_CMD --region=${{ inputs.region }}"
+          DEPLOY_CMD="$DEPLOY_CMD --entry-point=${{ inputs.entry-point }}"
+          DEPLOY_CMD="$DEPLOY_CMD --memory=${{ inputs.memory }}"
+          DEPLOY_CMD="$DEPLOY_CMD --timeout=${{ inputs.timeout }}"
+          DEPLOY_CMD="$DEPLOY_CMD --project=${{ steps.gcp-project.outputs.project }}"
+          
+          # Add environment variables if provided
+          if [ -n "${{ inputs.env-vars }}" ]; then
+            DEPLOY_CMD="$DEPLOY_CMD --set-env-vars=${{ inputs.env-vars }}"
+          fi
+          
+          # Add VPC connector if provided
+          if [ -n "${{ inputs.vpc-connector }}" ]; then
+            DEPLOY_CMD="$DEPLOY_CMD --vpc-connector=${{ inputs.vpc-connector }}"
+          fi
+          
+          # Add trigger (HTTP by default)
+          DEPLOY_CMD="$DEPLOY_CMD --trigger-http --allow-unauthenticated"
+          
+          echo "Deploying with command: $DEPLOY_CMD"
+          eval $DEPLOY_CMD
+      
+      - name: Deployment Summary
+        run: |
+          ENV="${{ inputs.environment }}"
+          FUNCTION="${{ inputs.function-name }}"
+          PROJECT="${{ steps.gcp-project.outputs.project }}"
+          REGION="${{ inputs.region }}"
+          
+          echo "## ☁️ Cloud Function Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Function:** ${FUNCTION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** \`${ENV}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Project:** ${PROJECT}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region:** ${REGION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runtime:** ${{ inputs.runtime }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Memory:** ${{ inputs.memory }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timeout:** ${{ inputs.timeout }}s" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Function URL:" >> $GITHUB_STEP_SUMMARY
+          echo "https://${REGION}-${PROJECT}.cloudfunctions.net/${FUNCTION}" >> $GITHUB_STEP_SUMMARY

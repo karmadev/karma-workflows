@@ -1,0 +1,120 @@
+name: Node.js Service CI/CD Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: 'Service name'
+        type: string
+        required: true
+      node-version:
+        description: 'Node.js version'
+        type: string
+        required: false
+        default: '18'
+      working-directory:
+        description: 'Working directory'
+        type: string
+        required: false
+        default: '.'
+      has-graphql:
+        description: 'Service has GraphQL schema'
+        type: boolean
+        required: false
+        default: false
+      apollo-graph:
+        description: 'Apollo graph name'
+        type: string
+        required: false
+      apollo-subgraph:
+        description: 'Apollo subgraph name'
+        type: string
+        required: false
+        default: 'Base'
+      schema-path:
+        description: 'GraphQL schema path'
+        type: string
+        required: false
+        default: './schema.gql'
+      run-lint:
+        description: 'Run linting'
+        type: boolean
+        required: false
+        default: true
+      run-typecheck:
+        description: 'Run type checking'
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      NPM_TOKEN:
+        description: 'NPM token'
+        required: true
+      GCP_SA_KEY:
+        description: 'GCP Service Account key'
+        required: true
+      GITOPS_TOKEN:
+        description: 'GitOps repo token'
+        required: true
+      APOLLO_KEY:
+        description: 'Apollo API key'
+        required: false
+
+jobs:
+  determine-environment:
+    uses: ./.github/workflows/determine-env.yml
+  
+  test:
+    uses: ./.github/workflows/node-test.yml
+    with:
+      node-version: ${{ inputs.node-version }}
+      working-directory: ${{ inputs.working-directory }}
+      run-lint: ${{ inputs.run-lint }}
+      run-typecheck: ${{ inputs.run-typecheck }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  
+  build:
+    needs: [determine-environment, test]
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      project-name: ${{ inputs.service-name }}
+      context-path: ${{ inputs.working-directory != '.' && inputs.working-directory || '.' }}
+      image-tag: ${{ needs.determine-environment.outputs.image-tag }}
+      environment: ${{ needs.determine-environment.outputs.environment }}
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  
+  upload-schema:
+    needs: [determine-environment, build]
+    if: |
+      needs.determine-environment.outputs.should-deploy == 'true' && 
+      inputs.has-graphql == true
+    uses: ./.github/workflows/apollo-schema.yml
+    with:
+      graph-name: ${{ inputs.apollo-graph }}
+      subgraph-name: ${{ inputs.apollo-subgraph }}
+      schema-path: ${{ inputs.schema-path }}
+      environment: ${{ needs.determine-environment.outputs.environment }}
+      working-directory: ${{ inputs.working-directory }}
+    secrets:
+      APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+  
+  deploy:
+    needs: [determine-environment, build, upload-schema]
+    if: |
+      always() && 
+      needs.determine-environment.outputs.should-deploy == 'true' &&
+      needs.build.result == 'success' &&
+      (needs.upload-schema.result == 'success' || needs.upload-schema.result == 'skipped')
+    uses: ./.github/workflows/deploy-k8s.yml
+    with:
+      service-name: ${{ inputs.service-name }}
+      environment: ${{ needs.determine-environment.outputs.environment }}
+      image-tag: ${{ needs.determine-environment.outputs.image-tag }}
+      image-url: ${{ needs.build.outputs.image-url }}
+      version: ${{ needs.determine-environment.outputs.version }}
+    secrets:
+      GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}

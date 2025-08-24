@@ -1,0 +1,103 @@
+name: Deploy to Firebase
+
+on:
+  workflow_call:
+    inputs:
+      project-id:
+        description: 'Firebase project ID'
+        type: string
+        required: true
+      environment:
+        description: 'Deployment environment'
+        type: string
+        required: true
+      working-directory:
+        description: 'Working directory'
+        type: string
+        required: false
+        default: '.'
+      node-version:
+        description: 'Node.js version'
+        type: string
+        required: false
+        default: '18'
+      build-command:
+        description: 'Build command'
+        type: string
+        required: false
+        default: 'npm run build'
+      deploy-target:
+        description: 'Firebase deploy target (hosting, functions, firestore, etc.)'
+        type: string
+        required: false
+        default: 'hosting'
+      hosting-target:
+        description: 'Firebase hosting target name'
+        type: string
+        required: false
+    secrets:
+      FIREBASE_SERVICE_ACCOUNT:
+        description: 'Firebase service account key'
+        required: true
+      NPM_TOKEN:
+        description: 'NPM token for private packages'
+        required: false
+
+jobs:
+  deploy:
+    name: Deploy to Firebase (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      
+      - name: Configure NPM for private packages
+        if: secrets.NPM_TOKEN != ''
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+      
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: npm ci --prefer-offline --no-audit
+      
+      - name: Build application
+        working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.build-command }}
+      
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ github.token }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ inputs.project-id }}
+          target: ${{ inputs.hosting-target }}
+          channelId: ${{ inputs.environment == 'production' && 'live' || inputs.environment }}
+      
+      - name: Deploy Functions (if applicable)
+        if: contains(inputs.deploy-target, 'functions')
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          npm install -g firebase-tools
+          firebase deploy --only functions --project ${{ inputs.project-id }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      
+      - name: Deployment Summary
+        run: |
+          ENV="${{ inputs.environment }}"
+          PROJECT="${{ inputs.project-id }}"
+          
+          echo "## 🔥 Firebase Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** \`${ENV}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Project:** ${PROJECT}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deploy Target:** ${{ inputs.deploy-target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA:** \`${GITHUB_SHA:0:8}\`" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,24 @@
+# Deploy configuration for Google Cloud Functions
+# Example: printer-functions, email-functions
+
+SERVICE_NAME="printer-functions"
+DEFAULT_BRANCH="main"
+DEPLOY_BRANCHES="main master"
+VERSION_PREFIX="v"
+ENABLE_HOTFIX=true
+ENABLE_PREVIEW=true
+
+# Cloud Function-specific settings
+DEPLOY_TYPE="cloud-function"
+FUNCTION_NAME="printer-handler"
+FUNCTION_REGION="europe-north1"
+FUNCTION_RUNTIME="nodejs18"
+FUNCTION_MEMORY="256MB"
+FUNCTION_TIMEOUT="60"
+
+# Optional: VPC settings
+VPC_CONNECTOR="karma-vpc-connector"
+
+# Environment-specific settings
+GCP_PROJECT_DEV="karma-development-513f2d47"
+GCP_PROJECT_PROD="karma-production-55cdd06e"

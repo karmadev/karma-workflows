@@ -1,0 +1,136 @@
+name: Deploy to Kubernetes
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: 'Service name in GitOps repo'
+        type: string
+        required: true
+      environment:
+        description: 'Deployment environment'
+        type: string
+        required: true
+      image-tag:
+        description: 'Docker image tag to deploy'
+        type: string
+        required: true
+      image-url:
+        description: 'Full Docker image URL'
+        type: string
+        required: true
+      gitops-repo:
+        description: 'GitOps repository'
+        type: string
+        required: false
+        default: 'karmadev/gitops'
+      version:
+        description: 'Version number for deployment summary'
+        type: string
+        required: false
+    secrets:
+      GITOPS_TOKEN:
+        description: 'GitHub token for GitOps repo'
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.gitops-repo }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+          ref: master
+      
+      - name: Update Kubernetes manifests
+        run: |
+          ENV="${{ inputs.environment }}"
+          IMAGE_TAG="${{ inputs.image-tag }}"
+          SERVICE_NAME="${{ inputs.service-name }}"
+          IMAGE_URL="${{ inputs.image-url }}"
+          
+          # Check if service directory exists
+          if [ ! -d "$SERVICE_NAME" ]; then
+            echo "::error::Directory $SERVICE_NAME does not exist in gitops repo"
+            echo "Available directories:"
+            ls -d */ 2>/dev/null || echo "No directories found"
+            exit 1
+          fi
+          
+          cd "$SERVICE_NAME"
+          
+          # Navigate to environment directory
+          if [ ! -d "$ENV" ]; then
+            echo "::error::Environment directory '$ENV' not found in $SERVICE_NAME"
+            echo "Available directories:"
+            ls -d */ 2>/dev/null || echo "No directories found"
+            exit 1
+          fi
+          
+          cd "$ENV"
+          
+          # Update kustomization.yaml if it exists
+          if [ -f "kustomization.yaml" ]; then
+            echo "Updating kustomization.yaml with new image tag: ${IMAGE_TAG}"
+            
+            # Update the newTag field
+            if grep -q "newTag:" kustomization.yaml; then
+              sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|" kustomization.yaml
+            elif grep -q "- name:" kustomization.yaml; then
+              # Kustomize images section format
+              sed -i "/- name:.*${SERVICE_NAME}/,/newTag:/ s|newTag: .*|newTag: ${IMAGE_TAG}|" kustomization.yaml
+            fi
+          fi
+          
+          # Update deployment files directly
+          for file in deployment.yaml deployment.yml app.yaml app.yml; do
+            if [ -f "$file" ]; then
+              echo "Updating $file with new image"
+              sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" "$file"
+            fi
+          done
+      
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          ENV="${{ inputs.environment }}"
+          IMAGE_TAG="${{ inputs.image-tag }}"
+          SERVICE_NAME="${{ inputs.service-name }}"
+          
+          git add -A
+          git commit -m "Deploy ${SERVICE_NAME} to ${ENV} - ${IMAGE_TAG}" || echo "No changes to commit"
+          git push
+      
+      - name: Wait for ArgoCD sync
+        run: |
+          echo "ArgoCD will automatically sync the changes within 3 minutes"
+          echo "You can manually sync in ArgoCD UI if needed for immediate deployment"
+      
+      - name: Deployment Summary
+        run: |
+          ENV="${{ inputs.environment }}"
+          IMAGE_TAG="${{ inputs.image-tag }}"
+          VERSION="${{ inputs.version }}"
+          SERVICE_NAME="${{ inputs.service-name }}"
+          
+          echo "## 🎉 Deployment Initiated Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$VERSION" ]; then
+            echo "- **Version:** \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **Environment:** \`${ENV}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${SERVICE_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag:** \`${IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA:** \`${GITHUB_SHA:0:8}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. ArgoCD will sync within 3 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check deployment status in ArgoCD" >> $GITHUB_STEP_SUMMARY
+          echo "3. Verify service health after deployment" >> $GITHUB_STEP_SUMMARY

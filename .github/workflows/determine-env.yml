@@ -1,0 +1,60 @@
+name: Determine Environment
+
+on:
+  workflow_call:
+    outputs:
+      environment:
+        description: 'The deployment environment (development/staging/production)'
+        value: ${{ jobs.determine.outputs.environment }}
+      should-deploy:
+        description: 'Whether deployment should proceed'
+        value: ${{ jobs.determine.outputs.should-deploy }}
+      image-tag:
+        description: 'Docker image tag to use'
+        value: ${{ jobs.determine.outputs.image-tag }}
+      version:
+        description: 'Version number (without v prefix)'
+        value: ${{ jobs.determine.outputs.version }}
+
+jobs:
+  determine:
+    name: Determine Deployment Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.determine.outputs.environment }}
+      should-deploy: ${{ steps.determine.outputs.should-deploy }}
+      image-tag: ${{ steps.determine.outputs.image-tag }}
+      version: ${{ steps.determine.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Determine environment from ref
+        id: determine
+        run: |
+          # Version tag-based deployment (v1.0.0, v2.1.3-dev, v1.0.0-staging, etc.)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG_NAME#v}  # Remove 'v' prefix
+            
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+            
+            # Determine environment based on version suffix
+            if [[ "$TAG_NAME" == *"-dev" ]]; then
+              echo "environment=development" >> $GITHUB_OUTPUT
+              echo "🔧 Development deployment triggered by version tag: ${TAG_NAME}"
+            elif [[ "$TAG_NAME" == *"-staging" ]]; then
+              echo "environment=staging" >> $GITHUB_OUTPUT
+              echo "🎭 Staging deployment triggered by version tag: ${TAG_NAME}"
+            else
+              echo "environment=production" >> $GITHUB_OUTPUT
+              echo "🚀 Production deployment triggered by version tag: ${TAG_NAME}"
+            fi
+          else
+            # For PRs and other events, don't deploy
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Build only (no deployment) for ref: ${GITHUB_REF}"
+          fi

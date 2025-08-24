@@ -1,0 +1,22 @@
+# Example: Migrated karma-merchant-web workflow
+name: CI/CD Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags
+  pull_request:
+    branches:
+      - master
+      - main
+
+jobs:
+  pipeline:
+    uses: karmadev/karma-workflows/.github/workflows/node-service-pipeline.yml@main
+    with:
+      service-name: karma-merchant-web
+      node-version: '18'
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}

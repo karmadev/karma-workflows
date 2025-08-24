@@ -1,0 +1,102 @@
+name: Docker Build & Push
+
+on:
+  workflow_call:
+    inputs:
+      project-name:
+        description: 'Project/service name'
+        type: string
+        required: true
+      dockerfile-path:
+        description: 'Path to Dockerfile'
+        type: string
+        required: false
+        default: './Dockerfile'
+      context-path:
+        description: 'Docker build context path'
+        type: string
+        required: false
+        default: '.'
+      image-tag:
+        description: 'Docker image tag'
+        type: string
+        required: true
+      environment:
+        description: 'Environment name'
+        type: string
+        required: true
+      push:
+        description: 'Push image to registry'
+        type: boolean
+        required: false
+        default: true
+      registry:
+        description: 'Docker registry URL'
+        type: string
+        required: false
+        default: 'europe-docker.pkg.dev'
+      gcp-project:
+        description: 'GCP project for registry'
+        type: string
+        required: false
+        default: 'karma-infrastructure-665f84eb'
+    secrets:
+      GCP_SA_KEY:
+        description: 'GCP Service Account key'
+        required: true
+      NPM_TOKEN:
+        description: 'NPM token for private packages'
+        required: false
+    outputs:
+      image-url:
+        description: 'Full image URL with tag'
+        value: ${{ jobs.build.outputs.image-url }}
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    outputs:
+      image-url: ${{ steps.build.outputs.image-url }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ inputs.registry }} --quiet
+      
+      - name: Determine image URL
+        id: image-url
+        run: |
+          IMAGE_URL="${{ inputs.registry }}/${{ inputs.gcp-project }}/eu.gcr.io/${{ inputs.project-name }}"
+          echo "url=${IMAGE_URL}" >> $GITHUB_OUTPUT
+      
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.context-path }}
+          file: ${{ inputs.dockerfile-path }}
+          push: ${{ inputs.push }}
+          tags: |
+            ${{ steps.image-url.outputs.url }}:${{ inputs.image-tag }}
+            ${{ steps.image-url.outputs.url }}:${{ github.sha }}
+            ${{ steps.image-url.outputs.url }}:${{ inputs.environment }}
+          build-args: |
+            NPM_TOKEN=${{ secrets.NPM_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Output image URL
+        run: |
+          echo "image-url=${{ steps.image-url.outputs.url }}:${{ inputs.image-tag }}" >> $GITHUB_OUTPUT

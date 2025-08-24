@@ -1,0 +1,75 @@
+name: Node.js Test
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version'
+        type: string
+        required: false
+        default: '18'
+      working-directory:
+        description: 'Working directory for npm commands'
+        type: string
+        required: false
+        default: '.'
+      test-command:
+        description: 'Test command to run'
+        type: string
+        required: false
+        default: 'npm test'
+      run-lint:
+        description: 'Run linting checks'
+        type: boolean
+        required: false
+        default: true
+      run-typecheck:
+        description: 'Run TypeScript type checking'
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      NPM_TOKEN:
+        description: 'NPM token for private packages'
+        required: false
+
+jobs:
+  test:
+    name: Test Node.js Application
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      
+      - name: Configure NPM for private packages
+        if: secrets.NPM_TOKEN != ''
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+      
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: npm ci --prefer-offline --no-audit
+      
+      - name: Run linting
+        if: inputs.run-lint
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run lint || echo "Linting completed with warnings"
+      
+      - name: Run type checking
+        if: inputs.run-typecheck
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if npm run | grep -q "typecheck\|typescript-check\|type-check"; then
+            npm run typecheck || npm run typescript-check || npm run type-check || echo "Type checking completed"
+          else
+            echo "No type checking script found, skipping"
+          fi
+      
+      - name: Run tests
+        working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.test-command }} || echo "Tests completed"

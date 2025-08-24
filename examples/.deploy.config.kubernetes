@@ -1,0 +1,17 @@
+# Deploy configuration for Kubernetes service
+# Example: karma-admin-api, karma-merchant-api, storefront-service
+
+SERVICE_NAME="karma-admin-api"
+DEFAULT_BRANCH="master"
+DEPLOY_BRANCHES="master main"
+VERSION_PREFIX="v"
+ENABLE_HOTFIX=true
+ENABLE_PREVIEW=true
+
+# Kubernetes-specific settings
+DEPLOY_TYPE="kubernetes"
+
+# Optional: GraphQL settings (if applicable)
+HAS_GRAPHQL=true
+APOLLO_GRAPH="karma-admin"
+APOLLO_SUBGRAPH="Base"

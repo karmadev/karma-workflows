@@ -1,0 +1,79 @@
+name: Firebase App CI/CD Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      project-name:
+        description: 'Firebase project name'
+        type: string
+        required: true
+      firebase-project-dev:
+        description: 'Firebase project ID for development'
+        type: string
+        required: true
+      firebase-project-prod:
+        description: 'Firebase project ID for production'
+        type: string
+        required: true
+      node-version:
+        description: 'Node.js version'
+        type: string
+        required: false
+        default: '18'
+      working-directory:
+        description: 'Working directory'
+        type: string
+        required: false
+        default: '.'
+      build-command:
+        description: 'Build command'
+        type: string
+        required: false
+        default: 'npm run build'
+      deploy-target:
+        description: 'Firebase deploy targets'
+        type: string
+        required: false
+        default: 'hosting'
+      hosting-target:
+        description: 'Firebase hosting target'
+        type: string
+        required: false
+    secrets:
+      NPM_TOKEN:
+        description: 'NPM token'
+        required: false
+      FIREBASE_SERVICE_ACCOUNT_DEV:
+        description: 'Firebase service account for dev'
+        required: true
+      FIREBASE_SERVICE_ACCOUNT_PROD:
+        description: 'Firebase service account for prod'
+        required: true
+
+jobs:
+  determine-environment:
+    uses: ./.github/workflows/determine-env.yml
+  
+  test:
+    uses: ./.github/workflows/node-test.yml
+    with:
+      node-version: ${{ inputs.node-version }}
+      working-directory: ${{ inputs.working-directory }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  
+  deploy:
+    needs: [determine-environment, test]
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+    uses: ./.github/workflows/deploy-firebase.yml
+    with:
+      project-id: ${{ needs.determine-environment.outputs.environment == 'production' && inputs.firebase-project-prod || inputs.firebase-project-dev }}
+      environment: ${{ needs.determine-environment.outputs.environment }}
+      working-directory: ${{ inputs.working-directory }}
+      node-version: ${{ inputs.node-version }}
+      build-command: ${{ inputs.build-command }}
+      deploy-target: ${{ inputs.deploy-target }}
+      hosting-target: ${{ inputs.hosting-target }}
+    secrets:
+      FIREBASE_SERVICE_ACCOUNT: ${{ needs.determine-environment.outputs.environment == 'production' && secrets.FIREBASE_SERVICE_ACCOUNT_PROD || secrets.FIREBASE_SERVICE_ACCOUNT_DEV }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
