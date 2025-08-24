@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       project-id:
-        description: 'Firebase project ID'
+        description: 'Firebase project ID or alias (dev, prod, default)'
         type: string
         required: true
       environment:
@@ -25,6 +25,16 @@ on:
         description: 'Build command'
         type: string
         required: false
+        default: ''
+      build-command-dev:
+        description: 'Build command for development'
+        type: string
+        required: false
+        default: 'npm run build:dev'
+      build-command-prod:
+        description: 'Build command for production'
+        type: string
+        required: false
         default: 'npm run build'
       deploy-target:
         description: 'Firebase deploy target (hosting, functions, firestore, etc.)'
@@ -35,12 +45,42 @@ on:
         description: 'Firebase hosting target name'
         type: string
         required: false
+      hosting-target-dev:
+        description: 'Firebase hosting target for development'
+        type: string
+        required: false
+        default: 'dev'
+      hosting-target-prod:
+        description: 'Firebase hosting target for production'
+        type: string
+        required: false
+        default: 'prod'
+      version:
+        description: 'Version number for deployment'
+        type: string
+        required: false
+      env-file-additions:
+        description: 'Additional environment variables to add (multiline string)'
+        type: string
+        required: false
+        default: ''
+      use-firebase-token:
+        description: 'Use Firebase token instead of service account'
+        type: boolean
+        required: false
+        default: false
     secrets:
       FIREBASE_SERVICE_ACCOUNT:
         description: 'Firebase service account key'
-        required: true
+        required: false
+      FIREBASE_DEPLOY_TOKEN:
+        description: 'Firebase deployment token'
+        required: false
       NPM_TOKEN:
         description: 'NPM token for private packages'
+        required: false
+      SENTRY_AUTH_TOKEN:
+        description: 'Sentry auth token for source maps'
         required: false
 
 jobs:
@@ -67,18 +107,90 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: npm ci --prefer-offline --no-audit
       
+      - name: Configure environment variables
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          ENV="${{ inputs.environment }}"
+          VERSION="${{ inputs.version }}"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          
+          # Determine env file
+          if [[ "$ENV" == "production" ]]; then
+            ENV_FILE=".env.production"
+          elif [[ "$ENV" == "staging" ]]; then
+            ENV_FILE=".env.staging"
+          else
+            ENV_FILE=".env.development"
+          fi
+          
+          # Add standard variables
+          if [ -f "$ENV_FILE" ]; then
+            echo "" >> $ENV_FILE
+            echo "REACT_APP_ENGINE_VERSION=${VERSION:-$SHORT_SHA}" >> $ENV_FILE
+            echo "REACT_APP_SENTRY_ENVIRONMENT=${ENV}" >> $ENV_FILE
+            echo "SENTRY_ENVIRONMENT=${ENV}" >> $ENV_FILE
+            echo "SENTRY_RELEASE=${VERSION:-$SHORT_SHA}" >> $ENV_FILE
+            
+            # Add custom environment variables if provided
+            if [ -n "${{ inputs.env-file-additions }}" ]; then
+              echo "${{ inputs.env-file-additions }}" >> $ENV_FILE
+            fi
+            
+            echo "Configured $ENV_FILE"
+          fi
+      
       - name: Build application
         working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.build-command }}
+        run: |
+          ENV="${{ inputs.environment }}"
+          export NODE_OPTIONS="--max-old-space-size=8192"
+          
+          # Determine build command
+          if [ -n "${{ inputs.build-command }}" ]; then
+            BUILD_CMD="${{ inputs.build-command }}"
+          elif [[ "$ENV" == "production" ]]; then
+            BUILD_CMD="${{ inputs.build-command-prod }}"
+          else
+            BUILD_CMD="${{ inputs.build-command-dev }}"
+          fi
+          
+          echo "Building with: $BUILD_CMD"
+          eval $BUILD_CMD
       
       - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ github.token }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: ${{ inputs.project-id }}
-          target: ${{ inputs.hosting-target }}
-          channelId: ${{ inputs.environment == 'production' && 'live' || inputs.environment }}
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          ENV="${{ inputs.environment }}"
+          PROJECT="${{ inputs.project-id }}"
+          
+          # Determine hosting target
+          if [ -n "${{ inputs.hosting-target }}" ]; then
+            TARGET="${{ inputs.hosting-target }}"
+          elif [[ "$ENV" == "production" ]]; then
+            TARGET="${{ inputs.hosting-target-prod }}"
+          else
+            TARGET="${{ inputs.hosting-target-dev }}"
+          fi
+          
+          # Build deploy command
+          DEPLOY_CMD="npx firebase deploy --project $PROJECT"
+          
+          if [[ "${{ inputs.deploy-target }}" == "hosting" ]]; then
+            DEPLOY_CMD="$DEPLOY_CMD --only hosting:$TARGET"
+          else
+            DEPLOY_CMD="$DEPLOY_CMD --only ${{ inputs.deploy-target }}"
+          fi
+          
+          # Add authentication
+          if [[ "${{ inputs.use-firebase-token }}" == "true" ]]; then
+            DEPLOY_CMD="$DEPLOY_CMD --token=\"${{ secrets.FIREBASE_DEPLOY_TOKEN }}\""
+          else
+            # Use service account (set as environment variable)
+            export GOOGLE_APPLICATION_CREDENTIALS="${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+          fi
+          
+          echo "Deploying with: $DEPLOY_CMD"
+          eval $DEPLOY_CMD
       
       - name: Deploy Functions (if applicable)
         if: contains(inputs.deploy-target, 'functions')
@@ -89,14 +201,39 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       
+      - name: Upload source maps to Sentry
+        if: secrets.SENTRY_AUTH_TOKEN != ''
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          ENV="${{ inputs.environment }}"
+          
+          # Try different sentry upload commands based on what's available
+          if npm run | grep -q "sentry:gen-source-maps"; then
+            if [[ "$ENV" == "production" ]]; then
+              npm run sentry:gen-source-maps || echo "Sentry upload failed, continuing..."
+            else
+              npm run sentry:gen-source-maps:dev || echo "Sentry upload failed, continuing..."
+            fi
+          elif npm run | grep -q "sentry:upload"; then
+            npm run sentry:upload || echo "Sentry upload failed, continuing..."
+          else
+            echo "No Sentry upload script found, skipping"
+          fi
+      
       - name: Deployment Summary
         run: |
           ENV="${{ inputs.environment }}"
           PROJECT="${{ inputs.project-id }}"
+          VERSION="${{ inputs.version }}"
           
           echo "## 🔥 Firebase Deployment Successful!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$VERSION" ]; then
+            echo "- **Version:** \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "- **Environment:** \`${ENV}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Project:** ${PROJECT}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deploy Target:** ${{ inputs.deploy-target }}" >> $GITHUB_STEP_SUMMARY

@@ -8,11 +8,11 @@ on:
         type: string
         required: true
       firebase-project-dev:
-        description: 'Firebase project ID for development'
+        description: 'Firebase project ID or alias for development'
         type: string
         required: true
       firebase-project-prod:
-        description: 'Firebase project ID for production'
+        description: 'Firebase project ID or alias for production'
         type: string
         required: true
       node-version:
@@ -26,7 +26,16 @@ on:
         required: false
         default: '.'
       build-command:
-        description: 'Build command'
+        description: 'Build command (overrides env-specific commands)'
+        type: string
+        required: false
+      build-command-dev:
+        description: 'Build command for development'
+        type: string
+        required: false
+        default: 'npm run build:dev'
+      build-command-prod:
+        description: 'Build command for production'
         type: string
         required: false
         default: 'npm run build'
@@ -36,19 +45,40 @@ on:
         required: false
         default: 'hosting'
       hosting-target:
-        description: 'Firebase hosting target'
+        description: 'Firebase hosting target (overrides env-specific)'
         type: string
         required: false
+      hosting-target-dev:
+        description: 'Firebase hosting target for development'
+        type: string
+        required: false
+        default: 'dev'
+      hosting-target-prod:
+        description: 'Firebase hosting target for production'
+        type: string
+        required: false
+        default: 'prod'
+      use-firebase-token:
+        description: 'Use Firebase token instead of service account'
+        type: boolean
+        required: false
+        default: true
     secrets:
       NPM_TOKEN:
         description: 'NPM token'
         required: false
       FIREBASE_SERVICE_ACCOUNT_DEV:
         description: 'Firebase service account for dev'
-        required: true
+        required: false
       FIREBASE_SERVICE_ACCOUNT_PROD:
         description: 'Firebase service account for prod'
-        required: true
+        required: false
+      FIREBASE_DEPLOY_TOKEN:
+        description: 'Firebase deployment token'
+        required: false
+      SENTRY_AUTH_TOKEN:
+        description: 'Sentry auth token'
+        required: false
 
 jobs:
   determine-environment:
@@ -72,8 +102,16 @@ jobs:
       working-directory: ${{ inputs.working-directory }}
       node-version: ${{ inputs.node-version }}
       build-command: ${{ inputs.build-command }}
+      build-command-dev: ${{ inputs.build-command-dev }}
+      build-command-prod: ${{ inputs.build-command-prod }}
       deploy-target: ${{ inputs.deploy-target }}
       hosting-target: ${{ inputs.hosting-target }}
+      hosting-target-dev: ${{ inputs.hosting-target-dev }}
+      hosting-target-prod: ${{ inputs.hosting-target-prod }}
+      version: ${{ needs.determine-environment.outputs.version }}
+      use-firebase-token: ${{ inputs.use-firebase-token }}
     secrets:
       FIREBASE_SERVICE_ACCOUNT: ${{ needs.determine-environment.outputs.environment == 'production' && secrets.FIREBASE_SERVICE_ACCOUNT_PROD || secrets.FIREBASE_SERVICE_ACCOUNT_DEV }}
+      FIREBASE_DEPLOY_TOKEN: ${{ secrets.FIREBASE_DEPLOY_TOKEN }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
