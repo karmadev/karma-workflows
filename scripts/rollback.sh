@@ -109,32 +109,67 @@ check_deployment_status() {
     fi
 }
 
+# Function to check if service supports staging
+has_staging_environment() {
+    local service=$1
+    local staging_services=("karma-merchant-api" "karma-merchant-web" "storefront-service" "storefront-web")
+    
+    for s in "${staging_services[@]}"; do
+        if [[ "$service" == "$s" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Function to select environment
 select_environment() {
     print_color $CYAN "Select environment to rollback:"
     echo ""
     print_color $CYAN "  1) Development"
-    print_color $YELLOW "  2) Staging"
-    print_color $RED "  3) Production"
-    echo "  4) Cancel"
-    echo ""
-    read -p "Enter your choice (1-4): " choice
     
-    case $choice in
-        1)
-            echo "development"
-            ;;
-        2)
-            echo "staging"
-            ;;
-        3)
-            echo "production"
-            ;;
-        *)
-            print_color $RED "Rollback cancelled"
-            exit 0
-            ;;
-    esac
+    # Only show staging if this service supports it
+    if has_staging_environment "$SERVICE_NAME"; then
+        print_color $YELLOW "  2) Staging"
+        print_color $RED "  3) Production"
+        echo "  4) Cancel"
+        echo ""
+        read -p "Enter your choice (1-4): " choice
+        
+        case $choice in
+            1)
+                echo "development"
+                ;;
+            2)
+                echo "staging"
+                ;;
+            3)
+                echo "production"
+                ;;
+            *)
+                print_color $RED "Rollback cancelled"
+                exit 0
+                ;;
+        esac
+    else
+        print_color $RED "  2) Production"
+        echo "  3) Cancel"
+        echo ""
+        read -p "Enter your choice (1-3): " choice
+        
+        case $choice in
+            1)
+                echo "development"
+                ;;
+            2)
+                echo "production"
+                ;;
+            *)
+                print_color $RED "Rollback cancelled"
+                exit 0
+                ;;
+        esac
+    fi
 }
 
 # Function to select version to rollback to
@@ -426,6 +461,19 @@ main() {
             ;;
     esac
     
+    # Check if staging is supported for this service
+    if [ "$environment" = "staging" ]; then
+        if ! has_staging_environment "$SERVICE_NAME"; then
+            print_color $RED "❌ Service $SERVICE_NAME does not support staging environment"
+            print_color $YELLOW "Staging is only available for:"
+            print_color $YELLOW "  • karma-merchant-api"
+            print_color $YELLOW "  • karma-merchant-web"
+            print_color $YELLOW "  • storefront-service"
+            print_color $YELLOW "  • storefront-web"
+            exit 1
+        fi
+    fi
+    
     print_color $MAGENTA "🎯 Rollback target: $environment"
     echo ""
     
@@ -471,8 +519,14 @@ Usage: $0 [environment] [options]
 
 Environments:
   dev, development    Rollback development environment
-  staging            Rollback staging environment  
+  staging            Rollback staging environment (only for supported services)
   prod, production   Rollback production environment
+
+Note: Staging is only available for:
+  • karma-merchant-api
+  • karma-merchant-web
+  • storefront-service
+  • storefront-web
 
 Options:
   --version VERSION  Specific version to rollback to

@@ -48,6 +48,19 @@ if [ -f .deploy.config.local ]; then
     source .deploy.config.local
 fi
 
+# Function to check if service supports staging
+has_staging_environment() {
+    local service=$1
+    local staging_services=("karma-merchant-api" "karma-merchant-web" "storefront-service" "storefront-web")
+    
+    for s in "${staging_services[@]}"; do
+        if [[ "$service" == "$s" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Function to print colored output
 print_color() {
     local color=$1
@@ -317,8 +330,14 @@ Usage: $0 [environment] [options]
 
 Environments:
   dev, development    Deploy to development environment
-  staging            Deploy to staging environment  
+  staging            Deploy to staging environment (only for supported services)
   prod, production   Deploy to production environment
+
+Note: Staging is only available for:
+  • karma-merchant-api
+  • karma-merchant-web
+  • storefront-service
+  • storefront-web
   hotfix             Create a hotfix deployment
   rollback           Rollback to a previous version (interactive)
 
@@ -458,42 +477,79 @@ main() {
         print_color $CYAN "Select action:"
         echo ""
         print_color $CYAN "  1) Development deployment (creates tag like v1.0.0-dev)"
-        print_color $YELLOW "  2) Staging deployment (creates tag like v1.0.0-staging)"
-        print_color $RED "  3) Production deployment (creates tag like v1.0.0)"
-        print_color $MAGENTA "  4) Rollback to previous version"
-        echo "  5) Cancel"
-        echo ""
-        read -p "Enter your choice (1-5): " choice
         
-        case $choice in
-            1)
-                environment="development"
-                ;;
-            2)
-                environment="staging"
-                ;;
-            3)
-                environment="production"
-                ;;
-            4)
-                # Launch rollback script
-                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-                if [ -f "$SCRIPT_DIR/rollback.sh" ]; then
-                    exec "$SCRIPT_DIR/rollback.sh"
-                else
-                    print_color $RED "Rollback script not found"
+        # Only show staging if this service supports it
+        if has_staging_environment "$SERVICE_NAME"; then
+            print_color $YELLOW "  2) Staging deployment (creates tag like v1.0.0-staging)"
+            print_color $RED "  3) Production deployment (creates tag like v1.0.0)"
+            print_color $MAGENTA "  4) Rollback to previous version"
+            echo "  5) Cancel"
+            echo ""
+            read -p "Enter your choice (1-5): " choice
+            
+            case $choice in
+                1)
+                    environment="development"
+                    ;;
+                2)
+                    environment="staging"
+                    ;;
+                3)
+                    environment="production"
+                    ;;
+                4)
+                    # Launch rollback script
+                    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                    if [ -f "$SCRIPT_DIR/rollback.sh" ]; then
+                        exec "$SCRIPT_DIR/rollback.sh"
+                    else
+                        print_color $RED "Rollback script not found"
+                        exit 1
+                    fi
+                    ;;
+                5)
+                    print_color $YELLOW "Operation cancelled"
+                    exit 0
+                    ;;
+                *)
+                    print_color $RED "Invalid choice"
                     exit 1
-                fi
-                ;;
-            5)
-                print_color $YELLOW "Operation cancelled"
-                exit 0
-                ;;
-            *)
-                print_color $RED "Invalid choice"
-                exit 1
-                ;;
-        esac
+                    ;;
+            esac
+        else
+            print_color $RED "  2) Production deployment (creates tag like v1.0.0)"
+            print_color $MAGENTA "  3) Rollback to previous version"
+            echo "  4) Cancel"
+            echo ""
+            read -p "Enter your choice (1-4): " choice
+            
+            case $choice in
+                1)
+                    environment="development"
+                    ;;
+                2)
+                    environment="production"
+                    ;;
+                3)
+                    # Launch rollback script
+                    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                    if [ -f "$SCRIPT_DIR/rollback.sh" ]; then
+                        exec "$SCRIPT_DIR/rollback.sh"
+                    else
+                        print_color $RED "Rollback script not found"
+                        exit 1
+                    fi
+                    ;;
+                4)
+                    print_color $YELLOW "Operation cancelled"
+                    exit 0
+                    ;;
+                *)
+                    print_color $RED "Invalid choice"
+                    exit 1
+                    ;;
+            esac
+        fi
     fi
     
     # Convert environment shortcuts
@@ -501,6 +557,19 @@ main() {
         environment="dev"
     elif [ "$environment" = "production" ]; then
         environment="prod"
+    fi
+    
+    # Check if staging is supported for this service
+    if [ "$environment" = "staging" ]; then
+        if ! has_staging_environment "$SERVICE_NAME"; then
+            print_color $RED "❌ Service $SERVICE_NAME does not support staging environment"
+            print_color $YELLOW "Staging is only available for:"
+            print_color $YELLOW "  • karma-merchant-api"
+            print_color $YELLOW "  • karma-merchant-web"
+            print_color $YELLOW "  • storefront-service"
+            print_color $YELLOW "  • storefront-web"
+            exit 1
+        fi
     fi
     
     # Special handling for hotfix
