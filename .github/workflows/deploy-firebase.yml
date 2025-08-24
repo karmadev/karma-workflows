@@ -100,8 +100,12 @@ jobs:
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
       
       - name: Configure NPM for private packages
-        if: secrets.NPM_TOKEN != ''
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          else
+            echo "No NPM token provided, continuing without private package access"
+          fi
       
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
@@ -202,11 +206,15 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       
       - name: Upload source maps to Sentry
-        if: secrets.SENTRY_AUTH_TOKEN != ''
         working-directory: ${{ inputs.working-directory }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "No Sentry auth token provided, skipping source map upload"
+            exit 0
+          fi
+          
           ENV="${{ inputs.environment }}"
           
           # Try different sentry upload commands based on what's available

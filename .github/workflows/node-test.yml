@@ -48,8 +48,12 @@ jobs:
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
       
       - name: Configure NPM for private packages
-        if: secrets.NPM_TOKEN != ''
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          else
+            echo "No NPM token provided, continuing without private package access"
+          fi
       
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
