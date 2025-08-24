@@ -57,7 +57,9 @@ jobs:
       
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
-        run: npm ci --prefer-offline --no-audit
+        run: |
+          # Try npm ci first, fallback to legacy-peer-deps if needed
+          npm ci --prefer-offline --no-audit || npm ci --prefer-offline --no-audit --legacy-peer-deps
       
       - name: Run linting
         if: inputs.run-lint
