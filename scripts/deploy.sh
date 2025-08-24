@@ -215,8 +215,19 @@ deploy_version() {
         print_color $YELLOW "📊 Monitoring deployment..."
         monitor_github_actions "$tag"
     else
+        # Get the GitHub repository path for manual monitoring
+        local github_repo=""
+        if command -v gh &> /dev/null; then
+            github_repo=$(gh repo view --json nameWithOwner 2>/dev/null | jq -r '.nameWithOwner' || echo "")
+        fi
+        
+        if [ -z "$github_repo" ]; then
+            # Fallback to git remote URL parsing
+            github_repo=$(git remote get-url origin 2>/dev/null | sed -E 's/.*github.com[:\\/](.+)\\.git/\\1/' || echo "karmadev/$SERVICE_NAME")
+        fi
+        
         print_color $YELLOW "📊 Monitor deployment:"
-        print_color $YELLOW "   • GitHub Actions: https://github.com/$SERVICE_NAME/actions"
+        print_color $YELLOW "   • GitHub Actions: https://github.com/$github_repo/actions"
         if [ "$DEPLOY_TYPE" = "kubernetes" ]; then
             print_color $YELLOW "   • ArgoCD: https://argocd.karma.life"
         fi
@@ -231,6 +242,17 @@ monitor_github_actions() {
     local workflow_status=""
     local check_count=0
     local max_checks=60  # Max 10 minutes (60 * 10 seconds)
+    
+    # Get the GitHub repository path
+    local github_repo=""
+    if command -v gh &> /dev/null; then
+        github_repo=$(gh repo view --json nameWithOwner 2>/dev/null | jq -r '.nameWithOwner' || echo "")
+    fi
+    
+    if [ -z "$github_repo" ]; then
+        # Fallback to git remote URL parsing
+        github_repo=$(git remote get-url origin 2>/dev/null | sed -E 's/.*github.com[:\\/](.+)\\.git/\\1/' || echo "karmadev/$SERVICE_NAME")
+    fi
     
     print_color $BLUE "⏳ Waiting for GitHub Actions to start..."
     
@@ -254,7 +276,7 @@ monitor_github_actions() {
     
     if [ "$workflow_found" = false ]; then
         print_color $YELLOW "⚠️  Workflow not found yet. You can monitor manually at:"
-        print_color $YELLOW "   https://github.com/$SERVICE_NAME/actions"
+        print_color $YELLOW "   https://github.com/$github_repo/actions"
         return
     fi
     
@@ -262,8 +284,8 @@ monitor_github_actions() {
     print_color $BLUE "📊 Watching deployment progress..."
     echo ""
     
-    # Use gh CLI to watch the run
-    gh run watch "$workflow_id" --interval 5 || true
+    # Use gh CLI to watch the run (suppress stderr to avoid "no default repo" warnings)
+    gh run watch "$workflow_id" --interval 5 2>/dev/null || true
     
     # Get final status
     workflow_info=$(gh run view "$workflow_id" --json status,conclusion 2>/dev/null)
@@ -271,7 +293,7 @@ monitor_github_actions() {
     
     if [ "$workflow_conclusion" = "success" ]; then
         print_color $GREEN "🎉 Deployment completed successfully!"
-        print_color $GREEN "   View run: https://github.com/$SERVICE_NAME/actions/runs/$workflow_id"
+        print_color $GREEN "   View run: https://github.com/$github_repo/actions/runs/$workflow_id"
         
         # Additional monitoring for Kubernetes deployments
         if [ "$DEPLOY_TYPE" = "kubernetes" ]; then
@@ -281,7 +303,7 @@ monitor_github_actions() {
         fi
     else
         print_color $RED "❌ Deployment failed with status: $workflow_conclusion"
-        print_color $RED "   View logs: https://github.com/$SERVICE_NAME/actions/runs/$workflow_id"
+        print_color $RED "   View logs: https://github.com/$github_repo/actions/runs/$workflow_id"
         exit 1
     fi
 }
