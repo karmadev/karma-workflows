@@ -320,6 +320,7 @@ Environments:
   staging            Deploy to staging environment  
   prod, production   Deploy to production environment
   hotfix             Create a hotfix deployment
+  rollback           Rollback to a previous version (interactive)
 
 Options:
   --major            Increment major version (X.0.0)
@@ -339,6 +340,7 @@ Examples:
   $0 staging --version 2.1.0  # Deploy specific version to staging
   $0 dev --rebuild            # Rebuild dev with same version
   $0 hotfix --message "Fix critical bug"  # Create hotfix deployment
+  $0 rollback                 # Interactive rollback to previous version
 
 Configuration:
   Create a .deploy.config file to customize:
@@ -392,6 +394,17 @@ main() {
                 environment="hotfix"
                 shift
                 ;;
+            rollback)
+                # Launch rollback script
+                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                if [ -f "$SCRIPT_DIR/rollback.sh" ]; then
+                    exec "$SCRIPT_DIR/rollback.sh" "$@"
+                else
+                    print_color $RED "Rollback script not found"
+                    print_color $YELLOW "Please ensure rollback.sh is in the same directory as deploy.sh"
+                    exit 1
+                fi
+                ;;
             --major)
                 increment_type="major"
                 shift
@@ -442,14 +455,15 @@ main() {
     
     # Interactive mode if no environment specified
     if [ -z "$environment" ]; then
-        print_color $CYAN "Select deployment environment:"
+        print_color $CYAN "Select action:"
         echo ""
-        print_color $CYAN "  1) Development (creates tag like v1.0.0-dev)"
-        print_color $YELLOW "  2) Staging (creates tag like v1.0.0-staging)"
-        print_color $RED "  3) Production (creates tag like v1.0.0)"
-        echo "  4) Cancel"
+        print_color $CYAN "  1) Development deployment (creates tag like v1.0.0-dev)"
+        print_color $YELLOW "  2) Staging deployment (creates tag like v1.0.0-staging)"
+        print_color $RED "  3) Production deployment (creates tag like v1.0.0)"
+        print_color $MAGENTA "  4) Rollback to previous version"
+        echo "  5) Cancel"
         echo ""
-        read -p "Enter your choice (1-4): " choice
+        read -p "Enter your choice (1-5): " choice
         
         case $choice in
             1)
@@ -462,7 +476,17 @@ main() {
                 environment="production"
                 ;;
             4)
-                print_color $YELLOW "Deployment cancelled"
+                # Launch rollback script
+                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                if [ -f "$SCRIPT_DIR/rollback.sh" ]; then
+                    exec "$SCRIPT_DIR/rollback.sh"
+                else
+                    print_color $RED "Rollback script not found"
+                    exit 1
+                fi
+                ;;
+            5)
+                print_color $YELLOW "Operation cancelled"
                 exit 0
                 ;;
             *)
