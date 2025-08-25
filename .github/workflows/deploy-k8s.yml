@@ -139,7 +139,7 @@ jobs:
           echo "3. Verify service health after deployment" >> $GITHUB_STEP_SUMMARY
       
       - name: Send Slack Notification
-        if: success() && secrets.SLACK_WEBHOOK_URL != ''
+        if: success()
         uses: slackapi/slack-github-action@v2.1.1
         with:
           payload: |
