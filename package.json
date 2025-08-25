@@ -1,0 +1,33 @@
+{
+  "name": "@karma/deploy-cli",
+  "version": "1.0.0",
+  "description": "Karma deployment CLI tool for managing CI/CD pipelines and deployment scripts",
+  "main": "cli/index.js",
+  "bin": {
+    "karma": "./cli/index.js",
+    "karma-deploy": "./cli/index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "karma",
+    "deployment",
+    "ci/cd",
+    "github-actions",
+    "kubernetes"
+  ],
+  "author": "Karma Development Team",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^9.4.1",
+    "inquirer": "^8.2.5",
+    "js-yaml": "^4.1.0",
+    "ora": "^5.4.1",
+    "semver": "^7.3.8"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

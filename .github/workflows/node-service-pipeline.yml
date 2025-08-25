@@ -59,6 +59,9 @@ on:
       APOLLO_KEY:
         description: 'Apollo API key'
         required: false
+      SLACK_WEBHOOK_URL:
+        description: 'Slack webhook URL for notifications'
+        required: false
 
 jobs:
   determine-environment:
@@ -118,3 +121,4 @@ jobs:
       version: ${{ needs.determine-environment.outputs.version }}
     secrets:
       GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
