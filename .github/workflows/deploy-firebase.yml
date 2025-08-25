@@ -82,6 +82,9 @@ on:
       SENTRY_AUTH_TOKEN:
         description: 'Sentry auth token for source maps'
         required: false
+      SLACK_WEBHOOK_URL:
+        description: 'Slack webhook URL for notifications'
+        required: false
 
 jobs:
   deploy:
@@ -248,3 +251,52 @@ jobs:
           echo "- **Project:** ${PROJECT}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deploy Target:** ${{ inputs.deploy-target }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit SHA:** \`${GITHUB_SHA:0:8}\`" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Send Slack Notification
+        if: success() && secrets.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          payload: |
+            {
+              "text": "🔥 Firebase Deployment Successful",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🔥 ${{ github.event.repository.name }} Deployed to Firebase",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Project:*\n${{ inputs.project-id }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n${{ inputs.environment }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\n${{ inputs.version || github.sha }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Deployed by:*\n${{ github.actor }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*Workflow:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
