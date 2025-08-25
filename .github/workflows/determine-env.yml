@@ -51,6 +51,21 @@ jobs:
               echo "environment=production" >> $GITHUB_OUTPUT
               echo "🚀 Production deployment triggered by version tag: ${TAG_NAME}"
             fi
+          # Branch-based deployment (master, main, develop)
+          elif [[ "$GITHUB_REF" == refs/heads/master ]] || [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "version=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "🚀 Production deployment triggered by push to ${GITHUB_REF#refs/heads/}"
+          elif [[ "$GITHUB_REF" == refs/heads/develop ]]; then
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            echo "environment=development" >> $GITHUB_OUTPUT
+            echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "version=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "🔧 Development deployment triggered by push to develop"
           else
             # For PRs and other events, don't deploy
             SHORT_SHA=$(git rev-parse --short HEAD)
