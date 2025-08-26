@@ -164,10 +164,14 @@ jobs:
           eval $BUILD_CMD
       
       - name: Setup Firebase Authentication
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
         run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-service-account.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-service-account.json" >> $GITHUB_ENV
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-service-account.json
+            echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-service-account.json" >> $GITHUB_ENV
+            echo "Service account authentication configured"
+          else
+            echo "Warning: No service account provided"
+          fi
       
       - name: Deploy to Firebase
         working-directory: ${{ inputs.working-directory }}
