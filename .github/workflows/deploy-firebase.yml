@@ -163,11 +163,23 @@ jobs:
           echo "Building with: $BUILD_CMD"
           eval $BUILD_CMD
       
+      - name: Setup Firebase Authentication
+        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-service-account.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-service-account.json" >> $GITHUB_ENV
+      
       - name: Deploy to Firebase
         working-directory: ${{ inputs.working-directory }}
         run: |
           ENV="${{ inputs.environment }}"
           PROJECT="${{ inputs.project-id }}"
+          
+          # Check if authentication is set up
+          if [ ! -f "/tmp/firebase-service-account.json" ]; then
+            echo "Error: No GCP_SA_KEY service account provided, Firebase deploy will fail"
+            exit 1
+          fi
           
           # Determine hosting target
           if [ -n "${{ inputs.hosting-target }}" ]; then
@@ -187,15 +199,6 @@ jobs:
             DEPLOY_CMD="$DEPLOY_CMD --only ${{ inputs.deploy-target }}"
           fi
           
-          # Use service account authentication
-          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-            echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > /tmp/firebase-service-account.json
-            export GOOGLE_APPLICATION_CREDENTIALS="/tmp/firebase-service-account.json"
-          else
-            echo "Error: No GCP_SA_KEY service account provided, Firebase deploy will fail"
-            exit 1
-          fi
-          
           echo "Deploying with: $DEPLOY_CMD"
           eval $DEPLOY_CMD
       
@@ -205,8 +208,6 @@ jobs:
         run: |
           npm install -g firebase-tools
           firebase deploy --only functions --project ${{ inputs.project-id }}
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       
       - name: Upload source maps to Sentry
         working-directory: ${{ inputs.working-directory }}
