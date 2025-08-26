@@ -165,12 +165,14 @@ jobs:
       
       - name: Setup Firebase Authentication
         run: |
-          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-            echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-service-account.json
+          # Check if service account is provided
+          SERVICE_ACCOUNT='${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          if [ ${#SERVICE_ACCOUNT} -gt 10 ]; then
+            echo "$SERVICE_ACCOUNT" > /tmp/firebase-service-account.json
             echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-service-account.json" >> $GITHUB_ENV
-            echo "Service account authentication configured"
+            echo "Service account authentication configured (length: ${#SERVICE_ACCOUNT})"
           else
-            echo "Warning: No service account provided"
+            echo "Warning: No service account provided or too short (length: ${#SERVICE_ACCOUNT})"
           fi
       
       - name: Deploy to Firebase
