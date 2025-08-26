@@ -67,6 +67,9 @@ on:
       NPM_TOKEN:
         description: 'NPM token'
         required: false
+      GCP_SA_KEY:
+        description: 'GCP service account key (JSON) for Firebase authentication'
+        required: false
       FIREBASE_SERVICE_ACCOUNT_DEV:
         description: 'Firebase service account for dev'
         required: false
@@ -114,7 +117,7 @@ jobs:
       version: ${{ needs.determine-environment.outputs.version }}
       use-firebase-token: ${{ inputs.use-firebase-token }}
     secrets:
-      FIREBASE_SERVICE_ACCOUNT: ${{ needs.determine-environment.outputs.environment == 'production' && secrets.FIREBASE_SERVICE_ACCOUNT_PROD || secrets.FIREBASE_SERVICE_ACCOUNT_DEV }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.GCP_SA_KEY || (needs.determine-environment.outputs.environment == 'production' && secrets.FIREBASE_SERVICE_ACCOUNT_PROD || secrets.FIREBASE_SERVICE_ACCOUNT_DEV) }}
       FIREBASE_DEPLOY_TOKEN: ${{ secrets.FIREBASE_DEPLOY_TOKEN }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}

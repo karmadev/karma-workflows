@@ -194,8 +194,13 @@ jobs:
           if [[ "${{ inputs.use-firebase-token }}" == "true" ]]; then
             DEPLOY_CMD="$DEPLOY_CMD --token=\"${{ secrets.FIREBASE_DEPLOY_TOKEN }}\""
           else
-            # Use service account (set as environment variable)
-            export GOOGLE_APPLICATION_CREDENTIALS="${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+            # Use service account - write to file and set environment variable
+            if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+              echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > /tmp/firebase-service-account.json
+              export GOOGLE_APPLICATION_CREDENTIALS="/tmp/firebase-service-account.json"
+            else
+              echo "Warning: No service account provided, Firebase deploy may fail"
+            fi
           fi
           
           echo "Deploying with: $DEPLOY_CMD"
