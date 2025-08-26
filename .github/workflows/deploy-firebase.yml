@@ -73,6 +73,9 @@ on:
       FIREBASE_SERVICE_ACCOUNT:
         description: 'Firebase service account key (from GCP_SA_KEY)'
         required: false
+      FIREBASE_DEPLOY_TOKEN:
+        description: 'Firebase deployment token'
+        required: false
       NPM_TOKEN:
         description: 'NPM token for private packages'
         required: false
@@ -165,14 +168,24 @@ jobs:
       
       - name: Setup Firebase Authentication
         run: |
-          # Check if service account is provided
-          SERVICE_ACCOUNT='${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
-          if [ ${#SERVICE_ACCOUNT} -gt 10 ]; then
-            echo "$SERVICE_ACCOUNT" > /tmp/firebase-service-account.json
-            echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-service-account.json" >> $GITHUB_ENV
-            echo "Service account authentication configured (length: ${#SERVICE_ACCOUNT})"
+          if [[ "${{ inputs.use-firebase-token }}" == "true" ]]; then
+            if [ -n "${{ secrets.FIREBASE_DEPLOY_TOKEN }}" ]; then
+              echo "Using Firebase token authentication"
+              echo "FIREBASE_TOKEN_AUTH=true" >> $GITHUB_ENV
+            else
+              echo "Error: Firebase token requested but FIREBASE_DEPLOY_TOKEN not provided"
+              exit 1
+            fi
           else
-            echo "Warning: No service account provided or too short (length: ${#SERVICE_ACCOUNT})"
+            # Check if service account is provided
+            SERVICE_ACCOUNT='${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+            if [ ${#SERVICE_ACCOUNT} -gt 10 ]; then
+              echo "$SERVICE_ACCOUNT" > /tmp/firebase-service-account.json
+              echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-service-account.json" >> $GITHUB_ENV
+              echo "Service account authentication configured"
+            else
+              echo "Warning: No service account provided"
+            fi
           fi
       
       - name: Deploy to Firebase
@@ -180,12 +193,6 @@ jobs:
         run: |
           ENV="${{ inputs.environment }}"
           PROJECT="${{ inputs.project-id }}"
-          
-          # Check if authentication is set up
-          if [ ! -f "/tmp/firebase-service-account.json" ]; then
-            echo "Error: No GCP_SA_KEY service account provided, Firebase deploy will fail"
-            exit 1
-          fi
           
           # Determine hosting target
           if [ -n "${{ inputs.hosting-target }}" ]; then
@@ -203,6 +210,15 @@ jobs:
             DEPLOY_CMD="$DEPLOY_CMD --only hosting:$TARGET"
           else
             DEPLOY_CMD="$DEPLOY_CMD --only ${{ inputs.deploy-target }}"
+          fi
+          
+          # Add authentication
+          if [[ "$FIREBASE_TOKEN_AUTH" == "true" ]]; then
+            DEPLOY_CMD="$DEPLOY_CMD --token '${{ secrets.FIREBASE_DEPLOY_TOKEN }}'"
+          elif [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            echo "Using service account from $GOOGLE_APPLICATION_CREDENTIALS"
+          else
+            echo "Warning: No authentication method configured, deployment may fail"
           fi
           
           echo "Deploying with: $DEPLOY_CMD"

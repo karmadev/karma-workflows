@@ -70,6 +70,9 @@ on:
       GCP_SA_KEY:
         description: 'GCP service account key (JSON) for Firebase authentication'
         required: false
+      FIREBASE_DEPLOY_TOKEN:
+        description: 'Firebase deployment token'
+        required: false
       SENTRY_AUTH_TOKEN:
         description: 'Sentry auth token'
         required: false
@@ -109,6 +112,7 @@ jobs:
       use-firebase-token: ${{ inputs.use-firebase-token }}
     secrets:
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.GCP_SA_KEY }}
+      FIREBASE_DEPLOY_TOKEN: ${{ secrets.FIREBASE_DEPLOY_TOKEN }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
