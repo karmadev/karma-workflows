@@ -194,6 +194,14 @@ jobs:
           ENV="${{ inputs.environment }}"
           PROJECT="${{ inputs.project-id }}"
           
+          # Debug: Check if .firebaserc exists and show its content
+          if [ -f ".firebaserc" ]; then
+            echo "Found .firebaserc file:"
+            cat .firebaserc
+          else
+            echo "Warning: .firebaserc file not found!"
+          fi
+          
           # Determine hosting target
           if [ -n "${{ inputs.hosting-target }}" ]; then
             TARGET="${{ inputs.hosting-target }}"
