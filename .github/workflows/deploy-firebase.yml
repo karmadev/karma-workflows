@@ -223,6 +223,10 @@ jobs:
           # Add authentication
           if [[ "$FIREBASE_TOKEN_AUTH" == "true" ]]; then
             DEPLOY_CMD="$DEPLOY_CMD --token '${{ secrets.FIREBASE_DEPLOY_TOKEN }}'"
+            echo "Using Firebase token authentication"
+            # Try to list projects with this token to debug access
+            echo "Testing token access to Firebase projects..."
+            npx firebase projects:list --token '${{ secrets.FIREBASE_DEPLOY_TOKEN }}' 2>&1 | head -20 || true
           elif [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
             echo "Using service account from $GOOGLE_APPLICATION_CREDENTIALS"
           else
