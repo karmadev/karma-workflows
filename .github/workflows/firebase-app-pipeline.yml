@@ -59,25 +59,16 @@ on:
         required: false
         default: 'prod'
       use-firebase-token:
-        description: 'Use Firebase token instead of service account'
+        description: 'Use Firebase token instead of service account (deprecated - always uses GCP_SA_KEY)'
         type: boolean
         required: false
-        default: true
+        default: false
     secrets:
       NPM_TOKEN:
         description: 'NPM token'
         required: false
       GCP_SA_KEY:
         description: 'GCP service account key (JSON) for Firebase authentication'
-        required: false
-      FIREBASE_SERVICE_ACCOUNT_DEV:
-        description: 'Firebase service account for dev'
-        required: false
-      FIREBASE_SERVICE_ACCOUNT_PROD:
-        description: 'Firebase service account for prod'
-        required: false
-      FIREBASE_DEPLOY_TOKEN:
-        description: 'Firebase deployment token'
         required: false
       SENTRY_AUTH_TOKEN:
         description: 'Sentry auth token'
@@ -117,8 +108,7 @@ jobs:
       version: ${{ needs.determine-environment.outputs.version }}
       use-firebase-token: ${{ inputs.use-firebase-token }}
     secrets:
-      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.GCP_SA_KEY || (needs.determine-environment.outputs.environment == 'production' && secrets.FIREBASE_SERVICE_ACCOUNT_PROD || secrets.FIREBASE_SERVICE_ACCOUNT_DEV) }}
-      FIREBASE_DEPLOY_TOKEN: ${{ secrets.FIREBASE_DEPLOY_TOKEN }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.GCP_SA_KEY }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

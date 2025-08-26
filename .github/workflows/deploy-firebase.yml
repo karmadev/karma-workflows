@@ -71,10 +71,7 @@ on:
         default: false
     secrets:
       FIREBASE_SERVICE_ACCOUNT:
-        description: 'Firebase service account key'
-        required: false
-      FIREBASE_DEPLOY_TOKEN:
-        description: 'Firebase deployment token'
+        description: 'Firebase service account key (from GCP_SA_KEY)'
         required: false
       NPM_TOKEN:
         description: 'NPM token for private packages'
@@ -190,17 +187,13 @@ jobs:
             DEPLOY_CMD="$DEPLOY_CMD --only ${{ inputs.deploy-target }}"
           fi
           
-          # Add authentication
-          if [[ "${{ inputs.use-firebase-token }}" == "true" ]]; then
-            DEPLOY_CMD="$DEPLOY_CMD --token=\"${{ secrets.FIREBASE_DEPLOY_TOKEN }}\""
+          # Use service account authentication
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > /tmp/firebase-service-account.json
+            export GOOGLE_APPLICATION_CREDENTIALS="/tmp/firebase-service-account.json"
           else
-            # Use service account - write to file and set environment variable
-            if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-              echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > /tmp/firebase-service-account.json
-              export GOOGLE_APPLICATION_CREDENTIALS="/tmp/firebase-service-account.json"
-            else
-              echo "Warning: No service account provided, Firebase deploy may fail"
-            fi
+            echo "Error: No GCP_SA_KEY service account provided, Firebase deploy will fail"
+            exit 1
           fi
           
           echo "Deploying with: $DEPLOY_CMD"
