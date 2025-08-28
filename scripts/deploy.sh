@@ -654,14 +654,23 @@ main() {
     
     # Determine version
     local new_version=""
-    local latest_tag=$(get_latest_version "$environment")
     
-    if [ "$rebuild_mode" = true ]; then
-        # For rebuild, use the latest version without incrementing
-        new_version=${latest_tag#${VERSION_PREFIX}}
-        new_version=${new_version%-*}
-        print_color $CYAN "🔄 Rebuild mode: Using existing version $new_version"
-    elif [ -n "$specific_version" ]; then
+    # Handle development with build numbers
+    if [ "$USE_DEV_BUILD_NUMBERS" = "true" ] && ([ "$environment" = "development" ] || [ "$environment" = "dev" ]); then
+        # For dev with build numbers
+        local next_build=$(get_next_dev_build)
+        new_version="$next_build"
+        print_color $BLUE "📊 Next development build: dev-${next_build}"
+    else
+        # Traditional versioning
+        local latest_tag=$(get_latest_version "$environment")
+        
+        if [ "$rebuild_mode" = true ]; then
+            # For rebuild, use the latest version without incrementing
+            new_version=${latest_tag#${VERSION_PREFIX}}
+            new_version=${new_version%-*}
+            print_color $CYAN "🔄 Rebuild mode: Using existing version $new_version"
+        elif [ -n "$specific_version" ]; then
         new_version="$specific_version"
         print_color $BLUE "📌 Using specified version: $new_version"
     else
@@ -713,6 +722,7 @@ main() {
                 exit 1
                 ;;
         esac
+        fi
     fi
     
     # Production deployment confirmation
