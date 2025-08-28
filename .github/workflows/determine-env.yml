@@ -31,8 +31,18 @@ jobs:
       - name: Determine environment from ref
         id: determine
         run: |
-          # Version tag-based deployment (v1.0.0, v2.1.3-dev, v1.0.0-staging, etc.)
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          # Dev build deployment (dev-20250828-1430-1)
+          if [[ "$GITHUB_REF" == refs/tags/dev-* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG_NAME#dev-}  # Remove 'dev-' prefix
+            
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+            echo "environment=development" >> $GITHUB_OUTPUT
+            echo "🔧 Development deployment triggered by build tag: ${TAG_NAME}"
+          # Version tag-based deployment (v1.0.0, v1.0.0-staging, etc.)
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             VERSION=${TAG_NAME#v}  # Remove 'v' prefix
             
@@ -41,10 +51,7 @@ jobs:
             echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
             
             # Determine environment based on version suffix
-            if [[ "$TAG_NAME" == *"-dev" ]]; then
-              echo "environment=development" >> $GITHUB_OUTPUT
-              echo "🔧 Development deployment triggered by version tag: ${TAG_NAME}"
-            elif [[ "$TAG_NAME" == *"-staging" ]]; then
+            if [[ "$TAG_NAME" == *"-staging" ]]; then
               echo "environment=staging" >> $GITHUB_OUTPUT
               echo "🎭 Staging deployment triggered by version tag: ${TAG_NAME}"
             else
