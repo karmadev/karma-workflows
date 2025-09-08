@@ -43,11 +43,48 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v4
         with:
           repository: ${{ inputs.gitops-repo }}
           token: ${{ secrets.GITOPS_TOKEN }}
           ref: master
+          path: gitops
+      
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: source
+      
+      - name: Copy Kubernetes configs from source to GitOps
+        run: |
+          ENV="${{ inputs.environment }}"
+          SERVICE_NAME="${{ inputs.service-name }}"
+          
+          echo "Copying Kubernetes configs from source repo to GitOps..."
+          
+          # Check if source has kubernetes configs
+          if [ -d "source/kubernetes/overlays/$ENV" ]; then
+            echo "Found kubernetes configs in source/kubernetes/overlays/$ENV"
+            
+            # Create service directory in GitOps if it doesn't exist
+            mkdir -p "gitops/$SERVICE_NAME/$ENV"
+            
+            # Copy all files from source kubernetes overlay to GitOps
+            cp -r source/kubernetes/overlays/$ENV/* "gitops/$SERVICE_NAME/$ENV/" || true
+            
+            # Also copy base configs if they exist and we're copying overlays
+            if [ -d "source/kubernetes/base" ]; then
+              echo "Found base configs, copying to GitOps..."
+              mkdir -p "gitops/$SERVICE_NAME/base"
+              cp -r source/kubernetes/base/* "gitops/$SERVICE_NAME/base/" || true
+            fi
+            
+            echo "✓ Copied Kubernetes configs from source to GitOps"
+          else
+            echo "No kubernetes configs found in source/kubernetes/overlays/$ENV, using existing GitOps configs"
+          fi
       
       - name: Update Kubernetes manifests
         run: |
@@ -55,6 +92,8 @@ jobs:
           IMAGE_TAG="${{ inputs.image-tag }}"
           SERVICE_NAME="${{ inputs.service-name }}"
           IMAGE_URL="${{ inputs.image-url }}"
+          
+          cd gitops
           
           # Check if service directory exists
           if [ ! -d "$SERVICE_NAME" ]; then
@@ -99,6 +138,8 @@ jobs:
       
       - name: Commit and push changes
         run: |
+          cd gitops
+          
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           
@@ -107,7 +148,13 @@ jobs:
           SERVICE_NAME="${{ inputs.service-name }}"
           
           git add -A
-          git commit -m "Deploy ${SERVICE_NAME} to ${ENV} - ${IMAGE_TAG}" || echo "No changes to commit"
+          git commit -m "Deploy ${SERVICE_NAME} to ${ENV} - ${IMAGE_TAG}
+
+Updated Kubernetes configs from source repository and image tag to ${IMAGE_TAG}
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>" || echo "No changes to commit"
           git push
       
       - name: Wait for ArgoCD sync
