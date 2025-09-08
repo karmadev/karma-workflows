@@ -149,12 +149,12 @@ jobs:
           
           git add -A
           git commit -m "Deploy ${SERVICE_NAME} to ${ENV} - ${IMAGE_TAG}
-
-Updated Kubernetes configs from source repository and image tag to ${IMAGE_TAG}
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>" || echo "No changes to commit"
+          
+          Updated Kubernetes configs from source repository and image tag to ${IMAGE_TAG}
+          
+          🤖 Generated with [Claude Code](https://claude.ai/code)
+          
+          Co-Authored-By: Claude <noreply@anthropic.com>" || echo "No changes to commit"
           git push
       
       - name: Wait for ArgoCD sync
