@@ -74,33 +74,11 @@ jobs:
             mkdir -p "gitops/$SERVICE_NAME/$ENV"
             
             # Build manifests using kubectl kustomize (like old Buildkite did)
-            cd source/kubernetes/overlays/$ENV
-            
-            # First update image tag in kustomization before building
-            if [ -f "kustomization.yaml" ]; then
-              # Use kustomize edit to update image
-              if kubectl kustomize . | grep -q "$SERVICE_NAME"; then
-                echo "Updating image tag in kustomization..."
-                # Create temporary kustomization with updated image
-                cp kustomization.yaml kustomization.yaml.backup
-                
-                # Update image tag - handle both old and new image name formats
-                if grep -q "newTag:" kustomization.yaml; then
-                  sed -i.bak "s/newTag:.*/newTag: $IMAGE_TAG/" kustomization.yaml
-                else
-                  echo "Warning: No newTag found in kustomization.yaml"
-                fi
-              fi
-            fi
-            
-            # Build the final manifest (this resolves base references in source repo)
-            # This is exactly what old Buildkite did: kustomize build and put result in gitops
-            echo "Building final manifest..."
-            mkdir -p ../../../gitops/$SERVICE_NAME/$ENV
-            kubectl kustomize . > ../../../gitops/$SERVICE_NAME/$ENV/manifest.yaml
+            echo "Building manifest from source/kubernetes/overlays/$ENV"
+            kubectl kustomize source/kubernetes/overlays/$ENV > gitops/$SERVICE_NAME/$ENV/manifest.yaml
             
             # Update image tag in the built manifest (like Buildkite did with image replacement)
-            cd ../../../gitops/$SERVICE_NAME/$ENV
+            cd gitops/$SERVICE_NAME/$ENV
             if [ -f "manifest.yaml" ]; then
               # Replace image references with new tag
               sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
