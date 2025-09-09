@@ -105,6 +105,74 @@ jobs:
             fi
           done
 
+      - name: Checkout source repository for config updates
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          path: source-repo
+
+      - name: Update additional Kubernetes configs
+        run: |
+          ENV="${{ inputs.environment }}"
+          SERVICE_NAME="${{ inputs['service-name'] }}"
+          
+          # Check if source repo has kubernetes configs
+          if [ -d "source-repo/kubernetes/overlays/${ENV}" ]; then
+            echo "🔧 Found kubernetes configs in source repo at kubernetes/overlays/${ENV}"
+            
+            # We're currently in gitops repo, in the SERVICE_NAME/ENV directory
+            echo "📁 Current gitops directory: $(pwd)"
+            echo "📂 Source configs directory: source-repo/kubernetes/overlays/${ENV}"
+            echo "📋 Available source config files:"
+            ls -la "source-repo/kubernetes/overlays/${ENV}/" || echo "  (empty or no files)"
+            
+            # Update ingress configurations
+            if [ -f "source-repo/kubernetes/overlays/${ENV}/ingress.yaml" ]; then
+              echo "🌐 Updating ingress configuration"
+              cp "source-repo/kubernetes/overlays/${ENV}/ingress.yaml" ./ingress.yaml
+            fi
+            
+            # Update configmap configurations  
+            if [ -f "source-repo/kubernetes/overlays/${ENV}/configmap.yaml" ]; then
+              echo "⚙️ Updating configmap configuration"
+              cp "source-repo/kubernetes/overlays/${ENV}/configmap.yaml" ./configmap.yaml
+            fi
+            
+            # Update service configurations
+            if [ -f "source-repo/kubernetes/overlays/${ENV}/service.yaml" ]; then
+              echo "🔗 Updating service configuration" 
+              cp "source-repo/kubernetes/overlays/${ENV}/service.yaml" ./service.yaml
+            fi
+            
+            # Update any other yaml files (but skip kustomization.yaml, deployment.yaml, manifest.yaml to avoid conflicts)
+            for config_file in source-repo/kubernetes/overlays/${ENV}/*.yaml; do
+              if [ -f "$config_file" ]; then
+                filename=$(basename "$config_file")
+                if [ "$filename" != "kustomization.yaml" ] && [ "$filename" != "deployment.yaml" ] && [ "$filename" != "manifest.yaml" ]; then
+                  echo "📄 Copying additional config: $filename"
+                  cp "$config_file" "./$filename"
+                fi
+              fi
+            done
+            
+            echo "✅ Config update complete. Updated files:"
+            ls -la *.yaml 2>/dev/null || echo "  (no yaml files found)"
+            
+          else
+            echo "ℹ️ No kubernetes/overlays/${ENV} directory found in source repo, skipping config updates"
+            echo "📂 Available directories in source repo:"
+            ls -la source-repo/ 2>/dev/null || true
+            if [ -d "source-repo/kubernetes" ]; then
+              echo "📂 Available kubernetes directories:"
+              ls -la source-repo/kubernetes/ 2>/dev/null || true
+              if [ -d "source-repo/kubernetes/overlays" ]; then
+                echo "📂 Available overlay environments:"
+                ls -la source-repo/kubernetes/overlays/ 2>/dev/null || true
+              fi
+            fi
+          fi
+
       - name: Commit and push changes
         run: |
           set -euo pipefail
