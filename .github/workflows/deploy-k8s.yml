@@ -86,12 +86,10 @@ jobs:
             fi
             
             # Create simple kustomization.yaml like old Buildkite
-            cat > kustomization.yaml << 'EOF'
-apiVersion: kustomize.config.k8s.io/v1beta1
+            echo "apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- manifest.yaml
-EOF
+- manifest.yaml" > kustomization.yaml
             
             # Extract image name and update kustomization with image tag
             IMAGE_NAME=$(echo "$IMAGE_URL" | sed 's/:.*$//')
