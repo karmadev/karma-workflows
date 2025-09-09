@@ -57,7 +57,7 @@ jobs:
     name: Build Docker Image
     runs-on: ubuntu-latest
     outputs:
-      image-url: ${{ steps.build.outputs.image-url }}
+      image-url: ${{ steps.output.outputs.image-url }}
     steps:
       - uses: actions/checkout@v4
       
@@ -98,6 +98,6 @@ jobs:
           cache-to: type=gha,mode=max
       
       - name: Output image URL
-        id: build
+        id: output
         run: |
           echo "image-url=${{ steps.image-url.outputs.url }}:${{ inputs.image-tag }}" >> $GITHUB_OUTPUT
