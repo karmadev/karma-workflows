@@ -71,15 +71,17 @@ jobs:
             # Create service directory in GitOps if it doesn't exist
             mkdir -p "gitops/$SERVICE_NAME/$ENV"
             
-            # Copy all files from source kubernetes overlay to GitOps
-            cp -r source/kubernetes/overlays/$ENV/* "gitops/$SERVICE_NAME/$ENV/" || true
-            
-            # Also copy base configs if they exist and we're copying overlays
+            # First copy base configs if they exist (overlays might reference them)
             if [ -d "source/kubernetes/base" ]; then
               echo "Found base configs, copying to GitOps..."
               mkdir -p "gitops/$SERVICE_NAME/base"
-              cp -r source/kubernetes/base/* "gitops/$SERVICE_NAME/base/" || true
+              cp -r source/kubernetes/base/* "gitops/$SERVICE_NAME/base/"
+              echo "✓ Copied base configs"
             fi
+            
+            # Then copy overlay files from source kubernetes overlay to GitOps
+            cp -r source/kubernetes/overlays/$ENV/* "gitops/$SERVICE_NAME/$ENV/"
+            echo "✓ Copied overlay configs for $ENV"
             
             echo "✓ Copied Kubernetes configs from source to GitOps"
           else
