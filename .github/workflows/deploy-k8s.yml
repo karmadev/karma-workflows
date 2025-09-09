@@ -57,12 +57,14 @@ jobs:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: source
       
-      - name: Copy Kubernetes configs from source to GitOps
+      - name: Build and deploy Kubernetes manifests (like old Buildkite)
         run: |
           ENV="${{ inputs.environment }}"
           SERVICE_NAME="${{ inputs.service-name }}"
+          IMAGE_TAG="${{ inputs.image-tag }}"
+          IMAGE_URL="${{ inputs.image-url }}"
           
-          echo "Copying Kubernetes configs from source repo to GitOps..."
+          echo "Building Kubernetes manifests from source repo..."
           
           # Check if source has kubernetes configs
           if [ -d "source/kubernetes/overlays/$ENV" ]; then
@@ -71,72 +73,55 @@ jobs:
             # Create service directory in GitOps if it doesn't exist
             mkdir -p "gitops/$SERVICE_NAME/$ENV"
             
-            # First copy base configs if they exist (overlays might reference them)
-            if [ -d "source/kubernetes/base" ]; then
-              echo "Found base configs, copying to GitOps..."
-              mkdir -p "gitops/$SERVICE_NAME/base"
-              cp -r source/kubernetes/base/* "gitops/$SERVICE_NAME/base/"
-              echo "✓ Copied base configs"
+            # Build manifests using kubectl kustomize (like old Buildkite did)
+            cd source/kubernetes/overlays/$ENV
+            
+            # First update image tag in kustomization before building
+            if [ -f "kustomization.yaml" ]; then
+              # Use kustomize edit to update image
+              if kubectl kustomize . | grep -q "$SERVICE_NAME"; then
+                echo "Updating image tag in kustomization..."
+                # Create temporary kustomization with updated image
+                cp kustomization.yaml kustomization.yaml.backup
+                
+                # Update image tag - handle both old and new image name formats
+                if grep -q "newTag:" kustomization.yaml; then
+                  sed -i.bak "s/newTag:.*/newTag: $IMAGE_TAG/" kustomization.yaml
+                else
+                  echo "Warning: No newTag found in kustomization.yaml"
+                fi
+              fi
             fi
             
-            # Then copy overlay files from source kubernetes overlay to GitOps
-            cp -r source/kubernetes/overlays/$ENV/* "gitops/$SERVICE_NAME/$ENV/"
-            echo "✓ Copied overlay configs for $ENV"
+            # Build the final manifest (this resolves base references in source repo)
+            echo "Building final manifest..."
+            kubectl kustomize . > ../../../gitops/$SERVICE_NAME/$ENV/manifest.yaml
             
-            echo "✓ Copied Kubernetes configs from source to GitOps"
+            # Create simple kustomization.yaml in gitops that just references the built manifest
+            cd ../../../gitops/$SERVICE_NAME/$ENV
+            cat > kustomization.yaml << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- manifest.yaml
+images:
+- name: $SERVICE_NAME
+  newName: ${IMAGE_URL%:*}
+  newTag: $IMAGE_TAG
+EOF
+            
+            echo "✓ Built and deployed pre-built manifests to GitOps (like old Buildkite)"
           else
-            echo "No kubernetes configs found in source/kubernetes/overlays/$ENV, using existing GitOps configs"
-          fi
-      
-      - name: Update Kubernetes manifests
-        run: |
-          ENV="${{ inputs.environment }}"
-          IMAGE_TAG="${{ inputs.image-tag }}"
-          SERVICE_NAME="${{ inputs.service-name }}"
-          IMAGE_URL="${{ inputs.image-url }}"
-          
-          cd gitops
-          
-          # Check if service directory exists
-          if [ ! -d "$SERVICE_NAME" ]; then
-            echo "::error::Directory $SERVICE_NAME does not exist in gitops repo"
-            echo "Available directories:"
-            ls -d */ 2>/dev/null || echo "No directories found"
-            exit 1
-          fi
-          
-          cd "$SERVICE_NAME"
-          
-          # Navigate to environment directory
-          if [ ! -d "$ENV" ]; then
-            echo "::error::Environment directory '$ENV' not found in $SERVICE_NAME"
-            echo "Available directories:"
-            ls -d */ 2>/dev/null || echo "No directories found"
-            exit 1
-          fi
-          
-          cd "$ENV"
-          
-          # Update kustomization.yaml if it exists
-          if [ -f "kustomization.yaml" ]; then
-            echo "Updating kustomization.yaml with new image tag: ${IMAGE_TAG}"
+            echo "No kubernetes configs found in source/kubernetes/overlays/$ENV, updating existing GitOps configs"
             
-            # Update the newTag field
-            if grep -q "newTag:" kustomization.yaml; then
-              sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|" kustomization.yaml
-            elif grep -q "- name:" kustomization.yaml; then
-              # Kustomize images section format
-              sed -i "/- name:.*${SERVICE_NAME}/,/newTag:/ s|newTag: .*|newTag: ${IMAGE_TAG}|" kustomization.yaml
+            cd gitops
+            
+            # Update existing GitOps configs with new image tag
+            if [ -f "$SERVICE_NAME/$ENV/kustomization.yaml" ]; then
+              cd "$SERVICE_NAME/$ENV"
+              sed -i.bak "s/newTag:.*/newTag: $IMAGE_TAG/" kustomization.yaml
             fi
           fi
-          
-          # Update deployment files directly
-          for file in deployment.yaml deployment.yml app.yaml app.yml; do
-            if [ -f "$file" ]; then
-              echo "Updating $file with new image"
-              sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" "$file"
-            fi
-          done
       
       - name: Commit and push changes
         run: |
