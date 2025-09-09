@@ -48,76 +48,64 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
     steps:
-      - name: Checkout GitOps repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: ${{ inputs.gitops-repo }}
           token: ${{ secrets.GITOPS_TOKEN }}
           ref: ${{ inputs.gitops-branch }}
-          path: gitops
-
-      - name: Checkout source repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITOPS_TOKEN }}
-          path: source
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'latest'
-
-      - name: Build complete manifest & update image (proven approach)
+      
+      - name: Update Kubernetes manifests
         run: |
-          set -euo pipefail
           ENV="${{ inputs.environment }}"
+          IMAGE_TAG="${{ inputs['image-tag'] }}"
           SERVICE_NAME="${{ inputs['service-name'] }}"
           IMAGE_URL="${{ inputs['image-url'] }}"
-
-          # Create service directory in GitOps
-          mkdir -p "gitops/$SERVICE_NAME/$ENV"
-          cd "gitops/$SERVICE_NAME/$ENV"
-
-          # COMPLETE MANIFEST GENERATION (handles ingress, configmap, service changes!)
-          if [ -d "../../../source/kubernetes/overlays/$ENV" ]; then
-            echo "🔄 Building COMPLETE manifest from source (includes ingress, configmap, service changes!)"
-            kubectl kustomize "../../../source/kubernetes/overlays/$ENV" > manifest.yaml
-            echo "✅ Generated complete flattened manifest.yaml with ALL configuration updates"
-          else
-            echo "No source kubernetes configs - using existing manifest.yaml"
-            if [ ! -f "manifest.yaml" ]; then
-              echo "Error: No manifest.yaml found and no source configs available"
-              exit 1
+          
+          # Check if service directory exists
+          if [ ! -d "$SERVICE_NAME" ]; then
+            echo "::error::Directory $SERVICE_NAME does not exist in gitops repo"
+            echo "Available directories:"
+            ls -d */ 2>/dev/null || echo "No directories found"
+            exit 1
+          fi
+          
+          cd "$SERVICE_NAME"
+          
+          # Navigate to environment directory
+          if [ ! -d "$ENV" ]; then
+            echo "::error::Environment directory '$ENV' not found in $SERVICE_NAME"
+            echo "Available directories:"
+            ls -d */ 2>/dev/null || echo "No directories found"
+            exit 1
+          fi
+          
+          cd "$ENV"
+          
+          # Update kustomization.yaml if it exists
+          if [ -f "kustomization.yaml" ]; then
+            echo "Updating kustomization.yaml with new image tag: ${IMAGE_TAG}"
+            
+            # Update the newTag field
+            if grep -q "newTag:" kustomization.yaml; then
+              sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|" kustomization.yaml
+            elif grep -q "- name:" kustomization.yaml; then
+              # Kustomize images section format
+              sed -i "/- name:.*${SERVICE_NAME}/,/newTag:/ s|newTag: .*|newTag: ${IMAGE_TAG}|" kustomization.yaml
             fi
           fi
-
-          # PROVEN SED IMAGE UPDATES (same as old working pipeline)
-          echo "🔄 Updating image to: $IMAGE_URL using proven sed approach"
           
-          # Show what we're working with
-          echo "Image lines before update:"
-          grep "image:" manifest.yaml | head -3
-          
-          # Apply proven sed replacements (handles both with and without existing tags)
-          sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
-          sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml  
-          sed -i "s|image: europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}$|image: ${IMAGE_URL}|g" manifest.yaml
-          # Additional pattern for images without any tag (most common case from kustomize)
-          sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}$|${IMAGE_URL}|g" manifest.yaml
-          
-          # Show results
-          echo "Image lines after update:"
-          grep "image:" manifest.yaml | head -3
-          
-          echo "✅ Updated image using proven sed approach"
-          
-          # Remove any kustomization.yaml files (we don't need them anymore)
-          rm -f kustomization.yaml kustomization.yml || true
+          # Update deployment files directly
+          for file in deployment.yaml deployment.yml app.yaml app.yml manifest.yaml; do
+            if [ -f "$file" ]; then
+              echo "Updating $file with new image"
+              # Handle both empty image fields and existing image URLs
+              sed -i "s|image: .*|image: ${IMAGE_URL}|g" "$file"
+            fi
+          done
 
       - name: Commit and push changes
         run: |
           set -euo pipefail
-          cd gitops
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
