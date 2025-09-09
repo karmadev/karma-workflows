@@ -98,10 +98,12 @@ jobs:
           echo "Image lines before update:"
           grep "image:" manifest.yaml | head -3
           
-          # Apply proven sed replacements (same as old pipeline that worked)
+          # Apply proven sed replacements (handles both with and without existing tags)
           sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
-          sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml
+          sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml  
           sed -i "s|image: europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}$|image: ${IMAGE_URL}|g" manifest.yaml
+          # Additional pattern for images without any tag (most common case from kustomize)
+          sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}$|${IMAGE_URL}|g" manifest.yaml
           
           # Show results
           echo "Image lines after update:"
