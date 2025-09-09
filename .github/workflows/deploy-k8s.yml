@@ -105,9 +105,9 @@ kind: Kustomization
 resources:
 - manifest.yaml
 images:
-- name: $SERVICE_NAME
+- name: ${SERVICE_NAME}
   newName: ${IMAGE_URL%:*}
-  newTag: $IMAGE_TAG
+  newTag: ${IMAGE_TAG}
 EOF
             
             echo "✓ Built and deployed pre-built manifests to GitOps (like old Buildkite)"
