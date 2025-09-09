@@ -97,9 +97,11 @@ jobs:
           # Update deployment files directly
           for file in deployment.yaml deployment.yml app.yaml app.yml manifest.yaml; do
             if [ -f "$file" ]; then
-              echo "Updating $file with new image"
-              # Handle both empty image fields and existing image URLs
-              sed -i "s|image: .*|image: ${IMAGE_URL}|g" "$file"
+              echo "Updating $file with new image for service ${SERVICE_NAME}"
+              # Only update images that contain the service name (preserve pgexec and other images)
+              sed -i "s|image: .*${SERVICE_NAME}[^[:space:]]*|image: ${IMAGE_URL}|g" "$file"
+              # Also handle empty image field immediately after the main service container name
+              sed -i "/name: ${SERVICE_NAME}/,/image:/ { /image: *$/s|image: *$|image: ${IMAGE_URL}|; }" "$file"
             fi
           done
 
