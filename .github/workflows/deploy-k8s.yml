@@ -16,7 +16,7 @@ on:
         type: string
         required: true
       image-url:
-        description: 'Full Docker image URL'
+        description: 'Full Docker image URL (including tag)'
         type: string
         required: true
       gitops-repo:
@@ -24,6 +24,11 @@ on:
         type: string
         required: false
         default: 'karmadev/gitops'
+      gitops-branch:
+        description: 'Branch in GitOps repo'
+        type: string
+        required: false
+        default: 'main'
       version:
         description: 'Version number for deployment summary'
         type: string
@@ -43,114 +48,92 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
     steps:
-      - name: Install kubectl and kustomize
-        run: |
-          # Install kubectl
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
-          
-          # Install kustomize
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
-          
-          # Verify installations
-          kubectl version --client
-          kustomize version
-
       - name: Checkout GitOps repository
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.gitops-repo }}
           token: ${{ secrets.GITOPS_TOKEN }}
+          ref: ${{ inputs.gitops-branch }}
           path: gitops
-      
+
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: source
-      
-      - name: Deploy using Strategy A (kustomize inputs + ArgoCD builds)
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Prepare GitOps overlay & bump image
         run: |
+          set -euo pipefail
           ENV="${{ inputs.environment }}"
-          SERVICE_NAME="${{ inputs.service-name }}"
-          IMAGE_TAG="${{ inputs.image-tag }}"
-          IMAGE_URL="${{ inputs.image-url }}"
-          
-          echo "Deploying $SERVICE_NAME to $ENV using Strategy A (like old Buildkite)"
-          
-          # Create service directory in GitOps if it doesn't exist
-          mkdir -p "gitops/$SERVICE_NAME/$ENV"
-          cd "gitops/$SERVICE_NAME/$ENV"
-          
-          # Strategy A: Commit kustomize inputs, let ArgoCD build and apply
-          if [ -d "../../../source/kubernetes/overlays/$ENV" ]; then
-            echo "Found kubernetes configs in source - copying kustomize inputs to gitops"
-            
-            # Copy the complete kustomize structure from source to gitops
-            cp -r "../../../source/kubernetes/overlays/$ENV"/* .
-            
-            # Also copy base if it exists and is referenced
-            if [ -d "../../../source/kubernetes/base" ] && grep -q "\.\.\/\.\.\/base" kustomization.yaml 2>/dev/null; then
-              echo "Copying referenced base directory"
-              mkdir -p "../../base"
-              cp -r "../../../source/kubernetes/base"/* "../../base/"
-            fi
-            
-            echo "✓ Copied kustomize inputs from source to gitops"
+          SERVICE_NAME="${{ inputs['service-name'] }}"
+          IMAGE_URL="${{ inputs['image-url'] }}"
+
+          # Prefer source overlays if present; otherwise operate in GitOps repo
+          if [ -d "source/kubernetes/overlays/$ENV" ]; then
+            echo "Using source/kubernetes/overlays/$ENV as desired state"
+            mkdir -p "gitops/$SERVICE_NAME/$ENV"
+            rsync -a --delete "source/kubernetes/overlays/$ENV/" "gitops/$SERVICE_NAME/$ENV/"
+            cd "gitops/$SERVICE_NAME/$ENV"
           else
-            echo "No source kubernetes configs - updating existing gitops kustomization"
+            echo "Using existing GitOps overlays at gitops/$SERVICE_NAME/$ENV"
+            cd "gitops/$SERVICE_NAME/$ENV"
           fi
-          
-          # Extract image name from URL for kustomize edit
-          IMAGE_NAME=$(echo "$IMAGE_URL" | sed 's/:.*$//')
-          
-          # Update image tag using kustomize edit (clean and safe)
-          echo "Updating image tag: ${IMAGE_NAME}=${IMAGE_URL}"
+
+          # Ensure a kustomization exists
+          if [ ! -f kustomization.yaml ] && [ ! -f kustomization.yml ]; then
+            echo "No kustomization.yaml found; creating one to manage images"
+            kustomize create --resources .
+          fi
+
+          # Set image (works whether images block exists or not)
+          IMAGE_NAME="$(echo "$IMAGE_URL" | sed 's/:.*$//')"
           kustomize edit set image "${IMAGE_NAME}=${IMAGE_URL}"
-          
-          echo "✓ Updated image tags using kustomize edit (ArgoCD will build manifest)"
-      
+
+          echo "Current kustomization.yaml:"
+          cat kustomization.yaml
+
       - name: Commit and push changes
         run: |
+          set -euo pipefail
           cd gitops
-          
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
           ENV="${{ inputs.environment }}"
-          IMAGE_TAG="${{ inputs.image-tag }}"
-          IMAGE_URL="${{ inputs.image-url }}"
-          SERVICE_NAME="${{ inputs.service-name }}"
-          
-          # Match old Buildkite commit message format exactly
+          IMAGE_URL="${{ inputs['image-url'] }}"
+          SERVICE_NAME="${{ inputs['service-name'] }}"
           COMMIT_SHA="${{ github.sha }}"
           SHORT_SHA="${COMMIT_SHA:0:7}"
           DEPLOYER="${{ github.actor }}"
-          
-          git add -A
-          git commit -m "${SERVICE_NAME}: ${ENV}, GitHub Actions build at ${SHORT_SHA}, by: ${DEPLOYER}
 
-image: ${IMAGE_URL}" || echo "No changes to commit"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "${SERVICE_NAME}: ${ENV}, GitHub Actions build at ${SHORT_SHA}, by: ${DEPLOYER} image: ${IMAGE_URL}"
           git push
-      
-      - name: Wait for ArgoCD sync
-        run: |
-          echo "ArgoCD will automatically sync the changes within 3 minutes"
-          echo "You can manually sync in ArgoCD UI if needed for immediate deployment"
-      
+
       - name: Deployment Summary
         run: |
           ENV="${{ inputs.environment }}"
-          IMAGE_TAG="${{ inputs.image-tag }}"
+          IMAGE_TAG="${{ inputs['image-tag'] }}"
           VERSION="${{ inputs.version }}"
-          SERVICE_NAME="${{ inputs.service-name }}"
-          
+          SERVICE_NAME="${{ inputs['service-name'] }}"
           echo "## 🎉 Deployment Initiated Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
-          if [ -n "$VERSION" ]; then
+          if [ -n "${VERSION:-}" ]; then
             echo "- **Version:** \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
           fi
           echo "- **Environment:** \`${ENV}\`" >> $GITHUB_STEP_SUMMARY
@@ -159,12 +142,11 @@ image: ${IMAGE_URL}" || echo "No changes to commit"
           echo "- **Commit SHA:** \`${GITHUB_SHA:0:8}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
-          echo "1. ArgoCD will sync within 3 minutes" >> $GITHUB_STEP_SUMMARY
-          echo "2. Check deployment status in ArgoCD" >> $GITHUB_STEP_SUMMARY
-          echo "3. Verify service health after deployment" >> $GITHUB_STEP_SUMMARY
-      
+          echo "1. If ArgoCD is auto-sync, it will reconcile shortly." >> $GITHUB_STEP_SUMMARY
+          echo "2. Otherwise, manually sync in ArgoCD and watch health." >> $GITHUB_STEP_SUMMARY
+
       - name: Send Slack Notification
-        if: success() && env.SLACK_WEBHOOK_URL != ''
+        if: ${{ success() && secrets.SLACK_WEBHOOK_URL != '' }}
         uses: slackapi/slack-github-action@v2.1.1
         with:
           webhook-type: incoming-webhook
@@ -183,22 +165,10 @@ image: ${IMAGE_URL}" || echo "No changes to commit"
                 {
                   "type": "section",
                   "fields": [
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Service:*\n${{ inputs.service-name }}"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Environment:*\n${{ inputs.environment }}"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Version:*\n${{ inputs.version || inputs.image-tag }}"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Deployed by:*\n${{ github.actor }}"
-                    }
+                    { "type": "mrkdwn", "text": "*Service:*\n${{ inputs.service-name }}" },
+                    { "type": "mrkdwn", "text": "*Environment:*\n${{ inputs.environment }}" },
+                    { "type": "mrkdwn", "text": "*Version:*\n${{ inputs.version || inputs.image-tag }}" },
+                    { "type": "mrkdwn", "text": "*Deployed by:*\n${{ github.actor }}" }
                   ]
                 },
                 {
