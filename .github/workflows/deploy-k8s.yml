@@ -99,10 +99,23 @@ jobs:
 
           # Update image using yq (clean and reliable)
           echo "Updating image to: $IMAGE_URL"
+          
+          # First, let's see what containers we have
+          echo "Current containers:"
+          yq '.spec.template.spec.containers[]' manifest.yaml | yq '.name, .image'
+          
+          # Update by container name match
           yq -i '(.spec.template.spec.containers[] | select(.name == "'"$SERVICE_NAME"'")).image = "'"$IMAGE_URL"'"' manifest.yaml
-
-          # Also handle any containers that might use the full service name pattern
-          yq -i '(.spec.template.spec.containers[] | select(.image | contains("'"$SERVICE_NAME"'"))).image = "'"$IMAGE_URL"'"' manifest.yaml
+          
+          # Also update any containers that already have this image base
+          yq -i '(.spec.template.spec.containers[] | select(.image | test("'"$SERVICE_NAME"'"))).image = "'"$IMAGE_URL"'"' manifest.yaml
+          
+          # Fallback: update the first container if no matches found
+          UPDATED_COUNT=$(yq '.spec.template.spec.containers[] | select(.image == "'"$IMAGE_URL"'") | length' manifest.yaml)
+          if [ "$UPDATED_COUNT" -eq 0 ]; then
+            echo "No containers matched, updating first container as fallback"
+            yq -i '.spec.template.spec.containers[0].image = "'"$IMAGE_URL"'"' manifest.yaml
+          fi
 
           echo "✓ Updated image in flattened manifest using yq"
           
