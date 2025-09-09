@@ -67,39 +67,50 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Install kustomize
-        uses: imranismail/setup-kustomize@v2
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
 
-      - name: Prepare GitOps overlay & bump image
+      - name: Build flattened manifest & update image
         run: |
           set -euo pipefail
           ENV="${{ inputs.environment }}"
           SERVICE_NAME="${{ inputs['service-name'] }}"
           IMAGE_URL="${{ inputs['image-url'] }}"
 
-          # Prefer source overlays if present; otherwise operate in GitOps repo
-          if [ -d "source/kubernetes/overlays/$ENV" ]; then
-            echo "Using source/kubernetes/overlays/$ENV as desired state"
-            mkdir -p "gitops/$SERVICE_NAME/$ENV"
-            rsync -a --delete "source/kubernetes/overlays/$ENV/" "gitops/$SERVICE_NAME/$ENV/"
-            cd "gitops/$SERVICE_NAME/$ENV"
+          # Create service directory in GitOps
+          mkdir -p "gitops/$SERVICE_NAME/$ENV"
+          cd "gitops/$SERVICE_NAME/$ENV"
+
+          # Strategy B: Build flattened manifest.yaml, no kustomization
+          if [ -d "../../../source/kubernetes/overlays/$ENV" ]; then
+            echo "Building flattened manifest from source kubernetes configs..."
+            kubectl kustomize "../../../source/kubernetes/overlays/$ENV" > manifest.yaml
+            echo "✓ Generated complete flattened manifest.yaml"
           else
-            echo "Using existing GitOps overlays at gitops/$SERVICE_NAME/$ENV"
-            cd "gitops/$SERVICE_NAME/$ENV"
+            echo "No source kubernetes configs - using existing manifest.yaml"
+            if [ ! -f "manifest.yaml" ]; then
+              echo "Error: No manifest.yaml found and no source configs available"
+              exit 1
+            fi
           fi
 
-          # Ensure a kustomization exists
-          if [ ! -f kustomization.yaml ] && [ ! -f kustomization.yml ]; then
-            echo "No kustomization.yaml found; creating one to manage images"
-            kustomize create --resources .
-          fi
+          # Update image using yq (clean and reliable)
+          echo "Updating image to: $IMAGE_URL"
+          yq -i '(.spec.template.spec.containers[] | select(.name == "'"$SERVICE_NAME"'")).image = "'"$IMAGE_URL"'"' manifest.yaml
 
-          # Set image (works whether images block exists or not)
-          IMAGE_NAME="$(echo "$IMAGE_URL" | sed 's/:.*$//')"
-          kustomize edit set image "${IMAGE_NAME}=${IMAGE_URL}"
+          # Also handle any containers that might use the full service name pattern
+          yq -i '(.spec.template.spec.containers[] | select(.image | contains("'"$SERVICE_NAME"'"))).image = "'"$IMAGE_URL"'"' manifest.yaml
 
-          echo "Current kustomization.yaml:"
-          cat kustomization.yaml
+          echo "✓ Updated image in flattened manifest using yq"
+          
+          # Remove any kustomization.yaml files (we don't need them anymore)
+          rm -f kustomization.yaml kustomization.yml || true
+          
+          echo "Current manifest.yaml image references:"
+          yq '.spec.template.spec.containers[].image' manifest.yaml || true
 
       - name: Commit and push changes
         run: |
