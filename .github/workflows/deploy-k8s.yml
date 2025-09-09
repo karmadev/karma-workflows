@@ -28,7 +28,7 @@ on:
         description: 'Branch in GitOps repo'
         type: string
         required: false
-        default: 'main'
+        default: 'master'
       version:
         description: 'Version number for deployment summary'
         type: string
