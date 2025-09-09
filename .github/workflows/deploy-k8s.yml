@@ -94,19 +94,17 @@ jobs:
             fi
             
             # Build the final manifest (this resolves base references in source repo)
+            # This is exactly what old Buildkite did: kustomize build and put result in gitops
             echo "Building final manifest..."
             kubectl kustomize . > ../../../gitops/$SERVICE_NAME/$ENV/manifest.yaml
             
-            # Create simple kustomization.yaml in gitops that just references the built manifest
+            # Update image tag in the built manifest (like Buildkite did with image replacement)
             cd ../../../gitops/$SERVICE_NAME/$ENV
-            echo "apiVersion: kustomize.config.k8s.io/v1beta1" > kustomization.yaml
-            echo "kind: Kustomization" >> kustomization.yaml
-            echo "resources:" >> kustomization.yaml
-            echo "- manifest.yaml" >> kustomization.yaml
-            echo "images:" >> kustomization.yaml
-            echo "- name: ${SERVICE_NAME}" >> kustomization.yaml
-            echo "  newName: ${IMAGE_URL%:*}" >> kustomization.yaml
-            echo "  newTag: ${IMAGE_TAG}" >> kustomization.yaml
+            if [ -f "manifest.yaml" ]; then
+              # Replace image references with new tag
+              sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
+              sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml
+            fi
             
             echo "✓ Built and deployed pre-built manifests to GitOps (like old Buildkite)"
           else
