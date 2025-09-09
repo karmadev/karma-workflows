@@ -50,13 +50,13 @@ jobs:
           token: ${{ secrets.GITOPS_TOKEN }}
           ref: master
           path: gitops
-      
+
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: source
-      
+
       - name: Build and deploy Kubernetes manifests (complete like old Buildkite)
         run: |
           ENV="${{ inputs.environment }}"
@@ -86,10 +86,12 @@ jobs:
             fi
             
             # Create simple kustomization.yaml like old Buildkite
-            echo "apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-- manifest.yaml" > kustomization.yaml
+            cat > kustomization.yaml <<EOF
+            apiVersion: kustomize.config.k8s.io/v1beta1
+            kind: Kustomization
+            resources:
+            - manifest.yaml
+            EOF
             
             # Extract image name and update kustomization with image tag
             IMAGE_NAME=$(echo "$IMAGE_URL" | sed 's/:.*$//')
@@ -107,7 +109,7 @@ resources:
               sed -i.bak "s/newTag:.*/newTag: $IMAGE_TAG/" kustomization.yaml
             fi
           fi
-      
+
       - name: Commit and push changes
         run: |
           cd gitops
@@ -135,7 +137,7 @@ image: ${IMAGE_URL}" || echo "No changes to commit"
         run: |
           echo "ArgoCD will automatically sync the changes within 3 minutes"
           echo "You can manually sync in ArgoCD UI if needed for immediate deployment"
-      
+
       - name: Deployment Summary
         run: |
           ENV="${{ inputs.environment }}"
@@ -158,7 +160,7 @@ image: ${IMAGE_URL}" || echo "No changes to commit"
           echo "1. ArgoCD will sync within 3 minutes" >> $GITHUB_STEP_SUMMARY
           echo "2. Check deployment status in ArgoCD" >> $GITHUB_STEP_SUMMARY
           echo "3. Verify service health after deployment" >> $GITHUB_STEP_SUMMARY
-      
+
       - name: Send Slack Notification
         if: success()
         uses: slackapi/slack-github-action@v2.1.1
