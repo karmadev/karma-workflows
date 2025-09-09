@@ -67,13 +67,7 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          yq --version
-
-      - name: Build flattened manifest & update image
+      - name: Build complete manifest & update image (proven approach)
         run: |
           set -euo pipefail
           ENV="${{ inputs.environment }}"
@@ -84,11 +78,11 @@ jobs:
           mkdir -p "gitops/$SERVICE_NAME/$ENV"
           cd "gitops/$SERVICE_NAME/$ENV"
 
-          # Strategy B: Build flattened manifest.yaml, no kustomization
+          # COMPLETE MANIFEST GENERATION (handles ingress, configmap, service changes!)
           if [ -d "../../../source/kubernetes/overlays/$ENV" ]; then
-            echo "Building flattened manifest from source kubernetes configs..."
+            echo "🔄 Building COMPLETE manifest from source (includes ingress, configmap, service changes!)"
             kubectl kustomize "../../../source/kubernetes/overlays/$ENV" > manifest.yaml
-            echo "✓ Generated complete flattened manifest.yaml"
+            echo "✅ Generated complete flattened manifest.yaml with ALL configuration updates"
           else
             echo "No source kubernetes configs - using existing manifest.yaml"
             if [ ! -f "manifest.yaml" ]; then
@@ -97,33 +91,26 @@ jobs:
             fi
           fi
 
-          # Update image using yq (clean and reliable)
-          echo "Updating image to: $IMAGE_URL"
+          # PROVEN SED IMAGE UPDATES (same as old working pipeline)
+          echo "🔄 Updating image to: $IMAGE_URL using proven sed approach"
           
-          # First, let's see what containers we have
-          echo "Current containers:"
-          yq '.spec.template.spec.containers[]' manifest.yaml | yq '.name, .image'
+          # Show what we're working with
+          echo "Image lines before update:"
+          grep "image:" manifest.yaml | head -3
           
-          # Update by container name match
-          yq -i '(.spec.template.spec.containers[] | select(.name == "'"$SERVICE_NAME"'")).image = "'"$IMAGE_URL"'"' manifest.yaml
+          # Apply proven sed replacements (same as old pipeline that worked)
+          sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
+          sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml
+          sed -i "s|image: europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}$|image: ${IMAGE_URL}|g" manifest.yaml
           
-          # Also update any containers that already have this image base
-          yq -i '(.spec.template.spec.containers[] | select(.image | test("'"$SERVICE_NAME"'"))).image = "'"$IMAGE_URL"'"' manifest.yaml
+          # Show results
+          echo "Image lines after update:"
+          grep "image:" manifest.yaml | head -3
           
-          # Fallback: update the first container if no matches found
-          UPDATED_COUNT=$(yq '.spec.template.spec.containers[] | select(.image == "'"$IMAGE_URL"'") | length' manifest.yaml)
-          if [ "$UPDATED_COUNT" -eq 0 ]; then
-            echo "No containers matched, updating first container as fallback"
-            yq -i '.spec.template.spec.containers[0].image = "'"$IMAGE_URL"'"' manifest.yaml
-          fi
-
-          echo "✓ Updated image in flattened manifest using yq"
+          echo "✅ Updated image using proven sed approach"
           
           # Remove any kustomization.yaml files (we don't need them anymore)
           rm -f kustomization.yaml kustomization.yml || true
-          
-          echo "Current manifest.yaml image references:"
-          yq '.spec.template.spec.containers[].image' manifest.yaml || true
 
       - name: Commit and push changes
         run: |
