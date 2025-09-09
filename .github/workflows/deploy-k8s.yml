@@ -57,46 +57,51 @@ jobs:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: source
       
-      - name: Build and deploy Kubernetes manifests (like old Buildkite)
+      - name: Deploy like old Buildkite system
         run: |
           ENV="${{ inputs.environment }}"
           SERVICE_NAME="${{ inputs.service-name }}"
           IMAGE_TAG="${{ inputs.image-tag }}"
           IMAGE_URL="${{ inputs.image-url }}"
           
-          echo "Building Kubernetes manifests from source repo..."
+          cd gitops
           
-          # Check if source has kubernetes configs
-          if [ -d "source/kubernetes/overlays/$ENV" ]; then
-            echo "Found kubernetes configs in source/kubernetes/overlays/$ENV"
+          # Create service directory in GitOps if it doesn't exist
+          mkdir -p "$SERVICE_NAME/$ENV"
+          cd "$SERVICE_NAME/$ENV"
+          
+          # Extract image name from IMAGE_URL (like old Buildkite)
+          IMAGE_NAME=$(echo "$IMAGE_URL" | sed 's/:.*$//')
+          
+          echo "Deploying $SERVICE_NAME to $ENV with image $IMAGE_URL"
+          
+          # Method 1: If source has kubernetes configs, build manifest.yaml once 
+          if [ -d "../../../source/kubernetes/overlays/$ENV" ]; then
+            echo "Building manifest from source kubernetes configs..."
+            kubectl kustomize ../../../source/kubernetes/overlays/$ENV > manifest.yaml
             
-            # Create service directory in GitOps if it doesn't exist
-            mkdir -p "gitops/$SERVICE_NAME/$ENV"
-            
-            # Build manifests using kubectl kustomize (like old Buildkite did)
-            echo "Building manifest from source/kubernetes/overlays/$ENV"
-            kubectl kustomize source/kubernetes/overlays/$ENV > gitops/$SERVICE_NAME/$ENV/manifest.yaml
-            
-            # Update image tag in the built manifest (like Buildkite did with image replacement)
-            cd gitops/$SERVICE_NAME/$ENV
-            if [ -f "manifest.yaml" ]; then
-              # Replace image references with new tag
-              sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
-              sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml
-            fi
-            
-            echo "✓ Built and deployed pre-built manifests to GitOps (like old Buildkite)"
-          else
-            echo "No kubernetes configs found in source/kubernetes/overlays/$ENV, updating existing GitOps configs"
-            
-            cd gitops
-            
-            # Update existing GitOps configs with new image tag
-            if [ -f "$SERVICE_NAME/$ENV/kustomization.yaml" ]; then
-              cd "$SERVICE_NAME/$ENV"
-              sed -i.bak "s/newTag:.*/newTag: $IMAGE_TAG/" kustomization.yaml
-            fi
+            # Replace any hardcoded image references in the built manifest
+            sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
+            sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml
           fi
+          
+          # Method 2: Like old Buildkite - use kustomize edit to update image tags
+          # Create or update kustomization.yaml (exactly like old Buildkite)
+          if [ ! -f "kustomization.yaml" ]; then
+            echo "Creating new kustomization.yaml"
+            cat > kustomization.yaml << EOF
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          - manifest.yaml
+          EOF
+          fi
+          
+          # Update image tag using kustomize edit (like old Buildkite)
+          echo "Updating image tag using kustomize edit..."
+          kustomize edit set image "${IMAGE_NAME}=${IMAGE_URL}"
+          
+          echo "✓ Updated GitOps exactly like old Buildkite system"
       
       - name: Commit and push changes
         run: |
@@ -107,16 +112,18 @@ jobs:
           
           ENV="${{ inputs.environment }}"
           IMAGE_TAG="${{ inputs.image-tag }}"
+          IMAGE_URL="${{ inputs.image-url }}"
           SERVICE_NAME="${{ inputs.service-name }}"
           
+          # Match old Buildkite commit message format exactly
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          DEPLOYER="${{ github.actor }}"
+          
           git add -A
-          git commit -m "Deploy ${SERVICE_NAME} to ${ENV} - ${IMAGE_TAG}
-          
-          Updated Kubernetes configs from source repository and image tag to ${IMAGE_TAG}
-          
-          🤖 Generated with [Claude Code](https://claude.ai/code)
-          
-          Co-Authored-By: Claude <noreply@anthropic.com>" || echo "No changes to commit"
+          git commit -m "${SERVICE_NAME}: ${ENV}, GitHub Actions build at ${SHORT_SHA}, by: ${DEPLOYER}
+
+image: ${IMAGE_URL}" || echo "No changes to commit"
           git push
       
       - name: Wait for ArgoCD sync
