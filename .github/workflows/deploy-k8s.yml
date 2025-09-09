@@ -43,73 +43,75 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
     steps:
+      - name: Install kubectl and kustomize
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          
+          # Install kustomize
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+          
+          # Verify installations
+          kubectl version --client
+          kustomize version
+
       - name: Checkout GitOps repository
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.gitops-repo }}
           token: ${{ secrets.GITOPS_TOKEN }}
-          ref: master
           path: gitops
-
+      
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: source
-
-      - name: Build and deploy Kubernetes manifests (complete like old Buildkite)
+      
+      - name: Deploy using Strategy A (kustomize inputs + ArgoCD builds)
         run: |
           ENV="${{ inputs.environment }}"
           SERVICE_NAME="${{ inputs.service-name }}"
           IMAGE_TAG="${{ inputs.image-tag }}"
           IMAGE_URL="${{ inputs.image-url }}"
           
-          echo "Building Kubernetes manifests from source repo..."
+          echo "Deploying $SERVICE_NAME to $ENV using Strategy A (like old Buildkite)"
           
-          # Check if source has kubernetes configs
-          if [ -d "source/kubernetes/overlays/$ENV" ]; then
-            echo "Found kubernetes configs in source/kubernetes/overlays/$ENV"
+          # Create service directory in GitOps if it doesn't exist
+          mkdir -p "gitops/$SERVICE_NAME/$ENV"
+          cd "gitops/$SERVICE_NAME/$ENV"
+          
+          # Strategy A: Commit kustomize inputs, let ArgoCD build and apply
+          if [ -d "../../../source/kubernetes/overlays/$ENV" ]; then
+            echo "Found kubernetes configs in source - copying kustomize inputs to gitops"
             
-            # Create service directory in GitOps if it doesn't exist
-            mkdir -p "gitops/$SERVICE_NAME/$ENV"
+            # Copy the complete kustomize structure from source to gitops
+            cp -r "../../../source/kubernetes/overlays/$ENV"/* .
             
-            # Build complete manifests using kubectl kustomize (like old Buildkite did)
-            echo "Building complete manifest from source/kubernetes/overlays/$ENV (includes all configs)"
-            kubectl kustomize source/kubernetes/overlays/$ENV > gitops/$SERVICE_NAME/$ENV/manifest.yaml
-            
-            # Update image tag in the built manifest
-            cd gitops/$SERVICE_NAME/$ENV
-            if [ -f "manifest.yaml" ]; then
-              # Replace image references with new tag
-              sed -i "s|image: .*${SERVICE_NAME}:.*|image: ${IMAGE_URL}|g" manifest.yaml
-              sed -i "s|europe-docker.pkg.dev.*/eu.gcr.io/${SERVICE_NAME}:.*|${IMAGE_URL}|g" manifest.yaml
+            # Also copy base if it exists and is referenced
+            if [ -d "../../../source/kubernetes/base" ] && grep -q "\.\.\/\.\.\/base" kustomization.yaml 2>/dev/null; then
+              echo "Copying referenced base directory"
+              mkdir -p "../../base"
+              cp -r "../../../source/kubernetes/base"/* "../../base/"
             fi
             
-            # Create simple kustomization.yaml like old Buildkite
-            cat > kustomization.yaml <<EOF
-            apiVersion: kustomize.config.k8s.io/v1beta1
-            kind: Kustomization
-            resources:
-            - manifest.yaml
-            EOF
-            
-            # Extract image name and update kustomization with image tag
-            IMAGE_NAME=$(echo "$IMAGE_URL" | sed 's/:.*$//')
-            kustomize edit set image "${IMAGE_NAME}=${IMAGE_URL}"
-            
-            echo "✓ Built complete manifests and updated image tags (like old Buildkite)"
+            echo "✓ Copied kustomize inputs from source to gitops"
           else
-            echo "No kubernetes configs found in source/kubernetes/overlays/$ENV, updating existing GitOps configs"
-            
-            cd gitops
-            
-            # Update existing GitOps configs with new image tag
-            if [ -f "$SERVICE_NAME/$ENV/kustomization.yaml" ]; then
-              cd "$SERVICE_NAME/$ENV"
-              sed -i.bak "s/newTag:.*/newTag: $IMAGE_TAG/" kustomization.yaml
-            fi
+            echo "No source kubernetes configs - updating existing gitops kustomization"
           fi
-
+          
+          # Extract image name from URL for kustomize edit
+          IMAGE_NAME=$(echo "$IMAGE_URL" | sed 's/:.*$//')
+          
+          # Update image tag using kustomize edit (clean and safe)
+          echo "Updating image tag: ${IMAGE_NAME}=${IMAGE_URL}"
+          kustomize edit set image "${IMAGE_NAME}=${IMAGE_URL}"
+          
+          echo "✓ Updated image tags using kustomize edit (ArgoCD will build manifest)"
+      
       - name: Commit and push changes
         run: |
           cd gitops
@@ -137,7 +139,7 @@ image: ${IMAGE_URL}" || echo "No changes to commit"
         run: |
           echo "ArgoCD will automatically sync the changes within 3 minutes"
           echo "You can manually sync in ArgoCD UI if needed for immediate deployment"
-
+      
       - name: Deployment Summary
         run: |
           ENV="${{ inputs.environment }}"
@@ -160,9 +162,9 @@ image: ${IMAGE_URL}" || echo "No changes to commit"
           echo "1. ArgoCD will sync within 3 minutes" >> $GITHUB_STEP_SUMMARY
           echo "2. Check deployment status in ArgoCD" >> $GITHUB_STEP_SUMMARY
           echo "3. Verify service health after deployment" >> $GITHUB_STEP_SUMMARY
-
+      
       - name: Send Slack Notification
-        if: success()
+        if: success() && env.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v2.1.1
         with:
           webhook-type: incoming-webhook
