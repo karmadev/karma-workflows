@@ -96,6 +96,7 @@ jobs:
             # Build the final manifest (this resolves base references in source repo)
             # This is exactly what old Buildkite did: kustomize build and put result in gitops
             echo "Building final manifest..."
+            mkdir -p ../../../gitops/$SERVICE_NAME/$ENV
             kubectl kustomize . > ../../../gitops/$SERVICE_NAME/$ENV/manifest.yaml
             
             # Update image tag in the built manifest (like Buildkite did with image replacement)
