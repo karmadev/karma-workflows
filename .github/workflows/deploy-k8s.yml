@@ -99,20 +99,16 @@ jobs:
             
             # Create simple kustomization.yaml in gitops that just references the built manifest
             cd ../../../gitops/$SERVICE_NAME/$ENV
-            cat > kustomization.yaml << 'EOF'
+            cat > kustomization.yaml << KUSTOMIZE_EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
 - manifest.yaml
-EOF
-            
-            # Add images section with proper variable expansion
-            cat >> kustomization.yaml << EOF
 images:
 - name: ${SERVICE_NAME}
   newName: ${IMAGE_URL%:*}
   newTag: ${IMAGE_TAG}
-EOF
+KUSTOMIZE_EOF
             
             echo "✓ Built and deployed pre-built manifests to GitOps (like old Buildkite)"
           else
