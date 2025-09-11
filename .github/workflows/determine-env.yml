@@ -54,6 +54,9 @@ jobs:
             if [[ "$TAG_NAME" == *"-staging" ]]; then
               echo "environment=staging" >> $GITHUB_OUTPUT
               echo "🎭 Staging deployment triggered by version tag: ${TAG_NAME}"
+            elif [[ "$TAG_NAME" == *"-dev" ]]; then
+              echo "environment=development" >> $GITHUB_OUTPUT
+              echo "🔧 Development deployment triggered by version tag: ${TAG_NAME}"
             else
               echo "environment=production" >> $GITHUB_OUTPUT
               echo "🚀 Production deployment triggered by version tag: ${TAG_NAME}"
