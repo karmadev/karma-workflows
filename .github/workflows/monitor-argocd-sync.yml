@@ -1,0 +1,142 @@
+name: Monitor ArgoCD Deployment Sync
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        description: 'ArgoCD application name'
+        type: string
+        required: true
+      environment:
+        description: 'Deployment environment (development, staging, production)'
+        type: string
+        required: true
+      max-wait-time:
+        description: 'Maximum time to wait for sync (seconds)'
+        type: number
+        required: false
+        default: 600
+      argocd-server:
+        description: 'ArgoCD server URL'
+        type: string
+        required: false
+        default: 'argocd.karma.life'
+      sync-policy:
+        description: 'Whether to trigger sync if needed (auto, manual)'
+        type: string
+        required: false
+        default: 'manual'
+    secrets:
+      ARGOCD_AUTH_TOKEN:
+        description: 'ArgoCD authentication token'
+        required: true
+
+jobs:
+  monitor-sync:
+    name: Monitor ArgoCD Sync (${{ inputs.app-name }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check ArgoCD Application Status
+        id: argocd-status
+        uses: omegion/argocd-actions@v0.3.0
+        with:
+          address: ${{ inputs.argocd-server }}
+          token: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+          action: get
+          appName: ${{ inputs.app-name }}
+
+      - name: Monitor Application Sync
+        uses: omegion/argocd-actions@v0.3.0
+        with:
+          address: ${{ inputs.argocd-server }}
+          token: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+          action: sync
+          appName: ${{ inputs.app-name }}
+          timeout: ${{ inputs.max-wait-time }}
+          # Only sync if policy allows it and app is out of sync
+          sync: ${{ inputs.sync-policy == 'auto' }}
+
+      - name: Wait for Healthy Status
+        id: wait-healthy
+        run: |
+          APP_NAME="${{ inputs.app-name }}"
+          ENVIRONMENT="${{ inputs.environment }}"
+          MAX_WAIT_TIME="${{ inputs.max-wait-time }}"
+          SERVER="${{ inputs.argocd-server }}"
+
+          echo "🔄 Monitoring ArgoCD sync for: $APP_NAME"
+          echo "🌍 Environment: $ENVIRONMENT"
+          echo "⏱️  Max wait time: ${MAX_WAIT_TIME}s"
+
+          start_time=$(date +%s)
+
+          # Use ArgoCD action to wait for sync
+          while true; do
+            current_time=$(date +%s)
+            elapsed=$((current_time - start_time))
+
+            if [ $elapsed -gt $MAX_WAIT_TIME ]; then
+              echo "⏰ Timeout after ${MAX_WAIT_TIME}s"
+              echo "sync_status=timeout" >> $GITHUB_OUTPUT
+              break
+            fi
+
+            # Check status every 30 seconds
+            sleep 30
+
+            echo "📊 Checking status... (${elapsed}s elapsed)"
+          done
+
+      - name: Get Final Application Status
+        id: final-status
+        uses: omegion/argocd-actions@v0.3.0
+        with:
+          address: ${{ inputs.argocd-server }}
+          token: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+          action: get
+          appName: ${{ inputs.app-name }}
+
+      - name: Create Deployment Summary
+        run: |
+          APP_NAME="${{ inputs.app-name }}"
+          ENVIRONMENT="${{ inputs.environment }}"
+          SERVER="${{ inputs.argocd-server }}"
+
+          # Parse the status from the ArgoCD action output
+          SYNC_STATUS="${{ steps.final-status.outputs.sync-status }}"
+          HEALTH_STATUS="${{ steps.final-status.outputs.health-status }}"
+
+          echo "📋 Final Status: Sync=$SYNC_STATUS, Health=$HEALTH_STATUS"
+
+          # Create GitHub step summary
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+## 🔄 ArgoCD Deployment Status
+
+### Application: \`$APP_NAME\`
+- **Environment:** $ENVIRONMENT
+- **Sync Status:** $SYNC_STATUS
+- **Health Status:** $HEALTH_STATUS
+- **ArgoCD Console:** [View Application](https://$SERVER/applications/$APP_NAME)
+
+EOF
+
+          if [ "$SYNC_STATUS" = "Synced" ] && [ "$HEALTH_STATUS" = "Healthy" ]; then
+            echo "✅ Deployment completed successfully!" >> $GITHUB_STEP_SUMMARY
+            echo "sync_success=true" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.wait-healthy.outputs.sync_status }}" = "timeout" ]; then
+            echo "⚠️ **Monitoring timed out** - Check ArgoCD console for current status" >> $GITHUB_STEP_SUMMARY
+            echo "sync_success=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ **Deployment may need attention** - Current status above" >> $GITHUB_STEP_SUMMARY
+            echo "sync_success=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Output Status
+        run: |
+          if [ "${{ steps.final-status.outputs.sync-status }}" = "Synced" ] && [ "${{ steps.final-status.outputs.health-status }}" = "Healthy" ]; then
+            echo "✅ ArgoCD application ${{ inputs.app-name }} is synced and healthy!"
+          else
+            echo "⚠️  ArgoCD application ${{ inputs.app-name }} needs attention"
+            echo "🔗 Check: https://${{ inputs.argocd-server }}/applications/${{ inputs.app-name }}"
+          fi
