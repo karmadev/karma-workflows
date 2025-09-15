@@ -114,7 +114,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           # Try npm ci first, fallback to legacy-peer-deps if needed
-          npm ci --prefer-offline --no-audit || npm ci --prefer-offline --no-audit --legacy-peer-deps
+          npm ci --include=optional --prefer-offline --no-audit || npm ci --include=optional --prefer-offline --no-audit --legacy-peer-deps
       
       - name: Configure environment variables
         working-directory: ${{ inputs.working-directory }}
