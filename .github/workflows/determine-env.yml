@@ -35,21 +35,30 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/dev-* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             VERSION=${TAG_NAME#dev-}  # Remove 'dev-' prefix
-            
+
             echo "should-deploy=true" >> $GITHUB_OUTPUT
             echo "version=${VERSION}" >> $GITHUB_OUTPUT
             echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
             echo "environment=development" >> $GITHUB_OUTPUT
             echo "🔧 Development deployment triggered by build tag: ${TAG_NAME}"
+          # Beta branch push deployment
+          elif [[ "$GITHUB_REF" == refs/heads/beta ]]; then
+            SHORT_SHA=$(git rev-parse --short HEAD)
+
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            echo "version=beta-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "image-tag=beta-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "environment=beta" >> $GITHUB_OUTPUT
+            echo "🧪 Beta deployment triggered by branch push"
           # Version tag-based deployment (v1.0.0, v1.0.0-staging, etc.)
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             VERSION=${TAG_NAME#v}  # Remove 'v' prefix
-            
+
             echo "should-deploy=true" >> $GITHUB_OUTPUT
             echo "version=${VERSION}" >> $GITHUB_OUTPUT
             echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
-            
+
             # Determine environment based on version suffix
             if [[ "$TAG_NAME" == *"-staging" ]]; then
               echo "environment=staging" >> $GITHUB_OUTPUT
@@ -63,7 +72,7 @@ jobs:
             fi
           else
             # For branches, PRs and other events, only build (don't deploy)
-            # Deployments are ONLY triggered by tags
+            # Deployments are ONLY triggered by tags or beta branch
             SHORT_SHA=$(git rev-parse --short HEAD)
             echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "should-deploy=false" >> $GITHUB_OUTPUT

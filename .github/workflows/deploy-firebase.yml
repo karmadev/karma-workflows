@@ -154,12 +154,6 @@ jobs:
           ENV="${{ inputs.environment }}"
           export NODE_OPTIONS="--max-old-space-size=8192"
 
-          # Verify Rollup installation before building
-          if ! npm list rollup > /dev/null 2>&1; then
-            echo "Rollup not found, reinstalling with optional dependencies..."
-            npm install rollup --include=optional
-          fi
-
           # Determine build command
           if [ -n "${{ inputs.build-command }}" ]; then
             BUILD_CMD="${{ inputs.build-command }}"
