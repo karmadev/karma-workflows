@@ -83,10 +83,19 @@ jobs:
 ### Core Workflows
 
 #### `determine-env.yml`
-Determines deployment environment based on git tags.
+Determines deployment environment. Supports two modes:
+
+**Tag-based mode (default):**
 - `v1.0.0` → production
 - `v1.0.0-dev` → development
 - `v1.0.0-staging` → staging
+- `dev-*` → development
+- `beta` branch → beta
+
+**Branch-based mode** (`deployment-mode: 'branches'`):
+- `dev` branch → development
+- `beta` branch → beta
+- `main` branch → production
 
 #### `node-test.yml`
 Runs tests, linting, and type checking for Node.js projects.
@@ -116,7 +125,48 @@ Complete pipeline for Firebase applications.
 
 ## 🏷️ Deployment Strategy
 
-### Using the Deploy Script (Recommended)
+### Branch-Based Deployment (New)
+
+For services that prefer automatic deployments on branch push:
+
+```yaml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - dev         # Deploy to development
+      - beta        # Deploy to beta
+      - main        # Deploy to production
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  pipeline:
+    uses: karmadev/karma-workflows/.github/workflows/node-service-pipeline.yml@main
+    with:
+      service-name: your-service-name
+      deployment-mode: 'branches'  # Enable branch-based deployment
+      development-branch: 'dev'    # Optional, defaults to 'dev'
+      production-branch: 'main'    # Optional, defaults to 'main'
+    secrets: inherit
+```
+
+**Deployment flow:**
+```bash
+# Deploy to development
+git checkout dev && git merge feature/my-feature && git push
+
+# Promote to beta
+git checkout beta && git merge dev && git push
+
+# Promote to production
+git checkout main && git merge beta && git push
+```
+
+### Using the Deploy Script (Tag-Based)
 
 The deploy script handles all tagging and deployment automatically:
 
@@ -171,7 +221,7 @@ Configure these secrets in your repository settings:
 
 ## 📚 Usage Examples
 
-### Basic Node.js Service
+### Basic Node.js Service (Tag-Based)
 
 ```yaml
 name: CI/CD Pipeline
@@ -187,6 +237,29 @@ jobs:
     with:
       service-name: inventory-service
     secrets: inherit  # Inherit all secrets from caller
+```
+
+### Node.js Service (Branch-Based)
+
+```yaml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - dev         # → development
+      - beta        # → beta
+      - main        # → production
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  pipeline:
+    uses: karmadev/karma-workflows/.github/workflows/node-service-pipeline.yml@main
+    with:
+      service-name: karma-internal-api
+      deployment-mode: 'branches'
+    secrets: inherit
 ```
 
 ### Node.js Service with GraphQL
@@ -306,6 +379,53 @@ with:
    ```bash
    git tag v0.0.1-dev
    git push origin v0.0.1-dev
+   ```
+
+### Migrate to Branch-Based Deployment
+
+To switch from tag-based to branch-based deployment:
+
+1. **Update your workflow file**:
+   ```yaml
+   on:
+     push:
+       branches:
+         - dev
+         - beta
+         - main
+     pull_request:
+       branches:
+         - main
+         - dev
+
+   jobs:
+     pipeline:
+       uses: karmadev/karma-workflows/.github/workflows/node-service-pipeline.yml@main
+       with:
+         service-name: your-service
+         deployment-mode: 'branches'  # Switch to branch-based
+       secrets: inherit
+   ```
+
+2. **Create the required branches** (if they don't exist):
+   ```bash
+   git checkout -b dev
+   git push -u origin dev
+
+   git checkout -b beta
+   git push -u origin beta
+   ```
+
+3. **Deploy by pushing to branches**:
+   ```bash
+   # Development
+   git checkout dev && git merge main && git push
+
+   # Beta
+   git checkout beta && git merge dev && git push
+
+   # Production
+   git checkout main && git push
    ```
 
 ## 🐛 Troubleshooting

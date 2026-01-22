@@ -2,9 +2,30 @@ name: Determine Environment
 
 on:
   workflow_call:
+    inputs:
+      # Deployment mode: 'branches' or 'tags' (default: 'tags' for backwards compatibility)
+      # - 'branches': dev→development, beta→beta, main→production
+      # - 'tags': dev-*→development, beta branch→beta, v*→production
+      deployment-mode:
+        description: 'Deployment mode (branches or tags)'
+        type: string
+        required: false
+        default: 'tags'
+      # Branch that deploys to production (default: main)
+      production-branch:
+        description: 'Branch that deploys to production'
+        type: string
+        required: false
+        default: 'main'
+      # Branch that deploys to development (default: dev)
+      development-branch:
+        description: 'Branch that deploys to development'
+        type: string
+        required: false
+        default: 'dev'
     outputs:
       environment:
-        description: 'The deployment environment (development/staging/production)'
+        description: 'The deployment environment (development/beta/staging/production)'
         value: ${{ jobs.determine.outputs.environment }}
       should-deploy:
         description: 'Whether deployment should proceed'
@@ -27,55 +48,126 @@ jobs:
       version: ${{ steps.determine.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Determine environment from ref
         id: determine
+        env:
+          DEPLOYMENT_MODE: ${{ inputs.deployment-mode }}
+          PRODUCTION_BRANCH: ${{ inputs.production-branch }}
+          DEVELOPMENT_BRANCH: ${{ inputs.development-branch }}
         run: |
-          # Dev build deployment (dev-20250828-1430-1)
-          if [[ "$GITHUB_REF" == refs/tags/dev-* ]]; then
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            VERSION=${TAG_NAME#dev-}  # Remove 'dev-' prefix
+          SHORT_SHA=$(git rev-parse --short HEAD)
 
-            echo "should-deploy=true" >> $GITHUB_OUTPUT
-            echo "version=${VERSION}" >> $GITHUB_OUTPUT
-            echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
-            echo "environment=development" >> $GITHUB_OUTPUT
-            echo "🔧 Development deployment triggered by build tag: ${TAG_NAME}"
-          # Beta branch push deployment
-          elif [[ "$GITHUB_REF" == refs/heads/beta ]]; then
-            SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "📋 Deployment mode: ${DEPLOYMENT_MODE}"
+          echo "📋 Git ref: ${GITHUB_REF}"
 
-            echo "should-deploy=true" >> $GITHUB_OUTPUT
-            echo "version=beta-${SHORT_SHA}" >> $GITHUB_OUTPUT
-            echo "image-tag=beta-${GITHUB_SHA}" >> $GITHUB_OUTPUT
-            echo "environment=beta" >> $GITHUB_OUTPUT
-            echo "🧪 Beta deployment triggered by branch push"
-          # Version tag-based deployment (v1.0.0, v1.0.0-staging, etc.)
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            VERSION=${TAG_NAME#v}  # Remove 'v' prefix
+          #######################################
+          # BRANCH-BASED DEPLOYMENT MODE
+          #######################################
+          if [[ "$DEPLOYMENT_MODE" == "branches" ]]; then
 
-            echo "should-deploy=true" >> $GITHUB_OUTPUT
-            echo "version=${VERSION}" >> $GITHUB_OUTPUT
-            echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
-
-            # Determine environment based on version suffix
-            if [[ "$TAG_NAME" == *"-staging" ]]; then
-              echo "environment=staging" >> $GITHUB_OUTPUT
-              echo "🎭 Staging deployment triggered by version tag: ${TAG_NAME}"
-            elif [[ "$TAG_NAME" == *"-dev" ]]; then
+            # Development branch (default: dev)
+            if [[ "$GITHUB_REF" == "refs/heads/${DEVELOPMENT_BRANCH}" ]]; then
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "version=dev-${SHORT_SHA}" >> $GITHUB_OUTPUT
+              echo "image-tag=dev-${GITHUB_SHA}" >> $GITHUB_OUTPUT
               echo "environment=development" >> $GITHUB_OUTPUT
-              echo "🔧 Development deployment triggered by version tag: ${TAG_NAME}"
-            else
+              echo "🔧 Development deployment triggered by push to ${DEVELOPMENT_BRANCH} branch"
+
+            # Beta branch
+            elif [[ "$GITHUB_REF" == refs/heads/beta ]]; then
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "version=beta-${SHORT_SHA}" >> $GITHUB_OUTPUT
+              echo "image-tag=beta-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+              echo "environment=beta" >> $GITHUB_OUTPUT
+              echo "🧪 Beta deployment triggered by push to beta branch"
+
+            # Production branch (default: main)
+            elif [[ "$GITHUB_REF" == "refs/heads/${PRODUCTION_BRANCH}" ]]; then
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "version=prod-${SHORT_SHA}" >> $GITHUB_OUTPUT
+              echo "image-tag=prod-${GITHUB_SHA}" >> $GITHUB_OUTPUT
               echo "environment=production" >> $GITHUB_OUTPUT
-              echo "🚀 Production deployment triggered by version tag: ${TAG_NAME}"
+              echo "🚀 Production deployment triggered by push to ${PRODUCTION_BRANCH} branch"
+
+            # Manual workflow dispatch (check github.event.inputs)
+            elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+              # For manual dispatch, we'll deploy based on the current branch
+              CURRENT_BRANCH=${GITHUB_REF#refs/heads/}
+              if [[ "$CURRENT_BRANCH" == "$DEVELOPMENT_BRANCH" ]]; then
+                ENV="development"
+              elif [[ "$CURRENT_BRANCH" == "beta" ]]; then
+                ENV="beta"
+              elif [[ "$CURRENT_BRANCH" == "$PRODUCTION_BRANCH" ]]; then
+                ENV="production"
+              else
+                ENV="development"
+              fi
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "version=${ENV}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+              echo "image-tag=${ENV}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+              echo "environment=${ENV}" >> $GITHUB_OUTPUT
+              echo "🎯 Manual deployment to ${ENV}"
+
+            # Any other branch/PR - build only
+            else
+              echo "should-deploy=false" >> $GITHUB_OUTPUT
+              echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+              echo "ℹ️ Build only (no deployment) for ref: ${GITHUB_REF}"
+              echo "   Push to ${DEVELOPMENT_BRANCH}, beta, or ${PRODUCTION_BRANCH} to deploy"
             fi
+
+          #######################################
+          # TAG-BASED DEPLOYMENT MODE (default)
+          #######################################
           else
-            # For branches, PRs and other events, only build (don't deploy)
-            # Deployments are ONLY triggered by tags or beta branch
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
-            echo "should-deploy=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ Build only (no deployment) for ref: ${GITHUB_REF}"
-            echo "   Use 'npm run deploy' to create a deployment tag"
+
+            # Dev build deployment (dev-20250828-1430-1)
+            if [[ "$GITHUB_REF" == refs/tags/dev-* ]]; then
+              TAG_NAME=${GITHUB_REF#refs/tags/}
+              VERSION=${TAG_NAME#dev-}  # Remove 'dev-' prefix
+
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "version=${VERSION}" >> $GITHUB_OUTPUT
+              echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+              echo "environment=development" >> $GITHUB_OUTPUT
+              echo "🔧 Development deployment triggered by build tag: ${TAG_NAME}"
+
+            # Beta branch push deployment
+            elif [[ "$GITHUB_REF" == refs/heads/beta ]]; then
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "version=beta-${SHORT_SHA}" >> $GITHUB_OUTPUT
+              echo "image-tag=beta-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+              echo "environment=beta" >> $GITHUB_OUTPUT
+              echo "🧪 Beta deployment triggered by branch push"
+
+            # Version tag-based deployment (v1.0.0, v1.0.0-staging, etc.)
+            elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              TAG_NAME=${GITHUB_REF#refs/tags/}
+              VERSION=${TAG_NAME#v}  # Remove 'v' prefix
+
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "version=${VERSION}" >> $GITHUB_OUTPUT
+              echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+
+              # Determine environment based on version suffix
+              if [[ "$TAG_NAME" == *"-staging" ]]; then
+                echo "environment=staging" >> $GITHUB_OUTPUT
+                echo "🎭 Staging deployment triggered by version tag: ${TAG_NAME}"
+              elif [[ "$TAG_NAME" == *"-dev" ]]; then
+                echo "environment=development" >> $GITHUB_OUTPUT
+                echo "🔧 Development deployment triggered by version tag: ${TAG_NAME}"
+              else
+                echo "environment=production" >> $GITHUB_OUTPUT
+                echo "🚀 Production deployment triggered by version tag: ${TAG_NAME}"
+              fi
+
+            else
+              # For branches, PRs and other events, only build (don't deploy)
+              # Deployments are ONLY triggered by tags or beta branch
+              echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+              echo "should-deploy=false" >> $GITHUB_OUTPUT
+              echo "ℹ️ Build only (no deployment) for ref: ${GITHUB_REF}"
+              echo "   Use 'npm run deploy' to create a deployment tag"
+            fi
           fi

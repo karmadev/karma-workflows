@@ -17,6 +17,24 @@ on:
         type: string
         required: false
         default: '.'
+      # Deployment mode: 'branches' or 'tags'
+      # - 'branches': dev→development, beta→beta, main→production
+      # - 'tags': dev-*→development, beta branch→beta, v*→production (default)
+      deployment-mode:
+        description: 'Deployment mode (branches or tags)'
+        type: string
+        required: false
+        default: 'tags'
+      production-branch:
+        description: 'Branch that deploys to production (only used in branches mode)'
+        type: string
+        required: false
+        default: 'main'
+      development-branch:
+        description: 'Branch that deploys to development (only used in branches mode)'
+        type: string
+        required: false
+        default: 'dev'
       has-graphql:
         description: 'Service has GraphQL schema'
         type: boolean
@@ -66,6 +84,10 @@ on:
 jobs:
   determine-environment:
     uses: ./.github/workflows/determine-env.yml
+    with:
+      deployment-mode: ${{ inputs.deployment-mode }}
+      production-branch: ${{ inputs.production-branch }}
+      development-branch: ${{ inputs.development-branch }}
   
   test:
     uses: ./.github/workflows/node-test.yml
