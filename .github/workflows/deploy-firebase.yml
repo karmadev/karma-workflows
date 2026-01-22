@@ -126,8 +126,8 @@ jobs:
           # Determine env file
           if [[ "$ENV" == "production" ]]; then
             ENV_FILE=".env.production"
-          elif [[ "$ENV" == "staging" ]]; then
-            ENV_FILE=".env.staging"
+          elif [[ "$ENV" == "beta" ]]; then
+            ENV_FILE=".env.beta"
           else
             ENV_FILE=".env.development"
           fi

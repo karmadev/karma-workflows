@@ -62,8 +62,8 @@ jobs:
           # Determine variant based on environment
           if [[ "$ENV" == "production" ]]; then
             VARIANT="production"
-          elif [[ "$ENV" == "staging" ]]; then
-            VARIANT="staging"
+          elif [[ "$ENV" == "beta" ]]; then
+            VARIANT="beta"
           else
             VARIANT="current"
           fi

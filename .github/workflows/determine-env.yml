@@ -25,7 +25,7 @@ on:
         default: 'dev'
     outputs:
       environment:
-        description: 'The deployment environment (development/beta/staging/production)'
+        description: 'The deployment environment (development/beta/production)'
         value: ${{ jobs.determine.outputs.environment }}
       should-deploy:
         description: 'Whether deployment should proceed'
@@ -141,7 +141,7 @@ jobs:
               echo "environment=beta" >> $GITHUB_OUTPUT
               echo "🧪 Beta deployment triggered by branch push"
 
-            # Version tag-based deployment (v1.0.0, v1.0.0-staging, etc.)
+            # Version tag-based deployment (v1.0.0, v1.0.0-beta, etc.)
             elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
               TAG_NAME=${GITHUB_REF#refs/tags/}
               VERSION=${TAG_NAME#v}  # Remove 'v' prefix
@@ -151,12 +151,12 @@ jobs:
               echo "image-tag=${TAG_NAME}" >> $GITHUB_OUTPUT
 
               # Determine environment based on version suffix
-              if [[ "$TAG_NAME" == *"-staging" ]]; then
-                echo "environment=staging" >> $GITHUB_OUTPUT
-                echo "🎭 Staging deployment triggered by version tag: ${TAG_NAME}"
-              elif [[ "$TAG_NAME" == *"-dev" ]]; then
+              if [[ "$TAG_NAME" == *"-dev" ]]; then
                 echo "environment=development" >> $GITHUB_OUTPUT
                 echo "🔧 Development deployment triggered by version tag: ${TAG_NAME}"
+              elif [[ "$TAG_NAME" == *"-beta" ]]; then
+                echo "environment=beta" >> $GITHUB_OUTPUT
+                echo "🧪 Beta deployment triggered by version tag: ${TAG_NAME}"
               else
                 echo "environment=production" >> $GITHUB_OUTPUT
                 echo "🚀 Production deployment triggered by version tag: ${TAG_NAME}"

@@ -8,7 +8,7 @@ on:
         type: string
         required: true
       environment:
-        description: 'Deployment environment (development, staging, production)'
+        description: 'Deployment environment (development, beta, production)'
         type: string
         required: true
       max-wait-time:
