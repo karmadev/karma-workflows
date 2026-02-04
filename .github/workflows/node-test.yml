@@ -28,6 +28,11 @@ on:
         type: boolean
         required: false
         default: true
+      package-manager:
+        description: 'Package manager to use (npm or bun)'
+        type: string
+        required: false
+        default: 'npm'
     secrets:
       NPM_TOKEN:
         description: 'NPM token for private packages'
@@ -44,9 +49,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: 'npm'
+          cache: ${{ inputs.package-manager == 'bun' && 'npm' || 'npm' }}
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
-      
+
+      - name: Setup Bun
+        if: inputs.package-manager == 'bun'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Configure NPM for private packages
         run: |
           if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
@@ -54,28 +65,47 @@ jobs:
           else
             echo "No NPM token provided, continuing without private package access"
           fi
-      
+
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
         run: |
-          # Try npm ci first, fallback to legacy-peer-deps if needed
-          npm ci --include=optional --prefer-offline --no-audit || npm ci --include=optional --prefer-offline --no-audit --legacy-peer-deps
+          if [ "${{ inputs.package-manager }}" = "bun" ]; then
+            bun install --frozen-lockfile || bun install
+          else
+            # Try npm ci first, fallback to legacy-peer-deps if needed
+            npm ci --include=optional --prefer-offline --no-audit || npm ci --include=optional --prefer-offline --no-audit --legacy-peer-deps
+          fi
       
       - name: Run linting
         if: inputs.run-lint
         working-directory: ${{ inputs.working-directory }}
-        run: npm run lint || echo "Linting completed with warnings"
-      
+        run: |
+          if [ "${{ inputs.package-manager }}" = "bun" ]; then
+            bun run lint || echo "Linting completed with warnings"
+          else
+            npm run lint || echo "Linting completed with warnings"
+          fi
+
       - name: Run type checking
         if: inputs.run-typecheck
         working-directory: ${{ inputs.working-directory }}
         run: |
-          if npm run | grep -q "typecheck\|typescript-check\|type-check"; then
-            npm run typecheck || npm run typescript-check || npm run type-check || echo "Type checking completed"
+          PM="${{ inputs.package-manager }}"
+          if [ "$PM" = "bun" ]; then
+            bun run type-check || bun run typecheck || bun run typescript-check || echo "Type checking completed"
           else
-            echo "No type checking script found, skipping"
+            if npm run | grep -q "typecheck\|typescript-check\|type-check"; then
+              npm run typecheck || npm run typescript-check || npm run type-check || echo "Type checking completed"
+            else
+              echo "No type checking script found, skipping"
+            fi
           fi
-      
+
       - name: Run tests
         working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.test-command }} || echo "Tests completed"
+        run: |
+          if [ "${{ inputs.package-manager }}" = "bun" ]; then
+            bun test || echo "Tests completed"
+          else
+            ${{ inputs.test-command }} || echo "Tests completed"
+          fi

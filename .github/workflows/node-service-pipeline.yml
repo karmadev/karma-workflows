@@ -64,6 +64,11 @@ on:
         type: boolean
         required: false
         default: true
+      package-manager:
+        description: 'Package manager to use (npm or bun)'
+        type: string
+        required: false
+        default: 'npm'
     secrets:
       NPM_TOKEN:
         description: 'NPM token'
@@ -96,6 +101,7 @@ jobs:
       working-directory: ${{ inputs.working-directory }}
       run-lint: ${{ inputs.run-lint }}
       run-typecheck: ${{ inputs.run-typecheck }}
+      package-manager: ${{ inputs.package-manager }}
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
   
