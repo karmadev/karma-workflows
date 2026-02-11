@@ -47,6 +47,9 @@ on:
       NPM_TOKEN:
         description: 'NPM token for private packages'
         required: false
+      VITE_ABLY_API_KEY:
+        description: 'Ably API key for frontend realtime features'
+        required: false
     outputs:
       image-url:
         description: 'Full image URL with tag'
@@ -56,6 +59,7 @@ jobs:
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     outputs:
       image-url: ${{ steps.output.outputs.image-url }}
     steps:
@@ -94,6 +98,7 @@ jobs:
             ${{ steps.image-url.outputs.url }}:${{ inputs.environment }}
           build-args: |
             NPM_TOKEN=${{ secrets.NPM_TOKEN }}
+            VITE_ABLY_API_KEY=${{ secrets.VITE_ABLY_API_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       

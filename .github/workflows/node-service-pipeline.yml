@@ -85,6 +85,9 @@ on:
       SLACK_WEBHOOK_URL:
         description: 'Slack webhook URL for notifications'
         required: false
+      VITE_ABLY_API_KEY:
+        description: 'Ably API key for frontend realtime features'
+        required: false
 
 jobs:
   determine-environment:
@@ -117,7 +120,8 @@ jobs:
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-  
+      VITE_ABLY_API_KEY: ${{ secrets.VITE_ABLY_API_KEY }}
+
   upload-schema:
     needs: [determine-environment, build]
     if: |
