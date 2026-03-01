@@ -63,6 +63,11 @@ on:
         type: boolean
         required: false
         default: false
+      kaia-notify:
+        description: 'Add [KAIA-PUSH] marker to Slack notification to trigger Kaia release notes'
+        type: boolean
+        required: false
+        default: false
     secrets:
       NPM_TOKEN:
         description: 'NPM token'
@@ -110,6 +115,7 @@ jobs:
       hosting-target-prod: ${{ inputs.hosting-target-prod }}
       version: ${{ needs.determine-environment.outputs.version }}
       use-firebase-token: ${{ inputs.use-firebase-token }}
+      kaia-notify: ${{ inputs.kaia-notify }}
     secrets:
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.GCP_SA_KEY }}
       FIREBASE_DEPLOY_TOKEN: ${{ secrets.FIREBASE_DEPLOY_TOKEN }}

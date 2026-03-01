@@ -69,6 +69,11 @@ on:
         type: boolean
         required: false
         default: false
+      kaia-notify:
+        description: 'Add [KAIA-PUSH] marker to Slack notification to trigger Kaia release notes'
+        type: boolean
+        required: false
+        default: false
     secrets:
       FIREBASE_SERVICE_ACCOUNT:
         description: 'Firebase service account key (from GCP_SA_KEY)'
@@ -292,7 +297,7 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "🔥 Firebase Deployment Successful",
+              "text": "🔥 Firebase Deployment Successful${{ inputs.kaia-notify && ' [KAIA-PUSH]' || '' }}",
               "blocks": [
                 {
                   "type": "header",
